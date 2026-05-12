@@ -1,0 +1,41 @@
+
+# Cocos Creator generated/cache directories
+library/
+temp/
+local/
+build/
+native/
+profiles/
+
+# Local editor extensions used only by this workstation.
+extensions/cocos-mcp-server/
+
+# Local MCP/editor assistant settings; not required to open the Cocos project.
+settings/.mcp-version
+settings/mcp-server.json
+settings/tool-manager.json
+
+# Dependencies and package manager output
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python helper cache
+__pycache__/
+*.py[cod]
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+
+# Keep Cloud Studio preview config, ignore the rest of VS Code local settings.
+.vscode/*
+!.vscode/preview.yml
+
+# Local logs and temporary files
+*.log
+*.tmp
+*.bak
