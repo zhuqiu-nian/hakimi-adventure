@@ -45,6 +45,7 @@ export type HudIconFrames = {
     scoreStar: SpriteFrame;
     dash: SpriteFrame;
     badge: SpriteFrame;
+    pause: SpriteFrame;
 };
 
 const TXT = {
@@ -93,6 +94,7 @@ export class GameHud extends Component {
     private diamondLabel: Label | null = null;
     private totalCoinLabel: Label | null = null;
     private scoreLabel: Label | null = null;
+    private scoreShadowLabel: Label | null = null;
     private coinLabel: Label | null = null;
     private distanceLabel: Label | null = null;
     private multiplierLabel: Label | null = null;
@@ -115,7 +117,7 @@ export class GameHud extends Component {
         this.currencyRoot = this.makeNode('CurrencyRoot', this.node, Vec3.ZERO);
         this.buildCurrency(panelFrame, icons);
         this.buildMenu(buttonFrame, logoFrame);
-        this.buildGameHud(buttonFrame, panelFrame);
+        this.buildGameHud(icons);
         this.buildSettings(buttonFrame, panelFrame);
         this.buildPause(buttonFrame, panelFrame);
         this.buildUpgrade(buttonFrame, panelFrame, icons);
@@ -162,7 +164,9 @@ export class GameHud extends Component {
     }
 
     public updateStats(stats: HudStats): void {
-        if (this.scoreLabel) this.scoreLabel.string = `\u5206\u6570 ${Math.floor(stats.score)}`;
+        const scoreText = `\u5206\u6570 ${Math.floor(stats.score)}`;
+        if (this.scoreLabel) this.scoreLabel.string = scoreText;
+        if (this.scoreShadowLabel) this.scoreShadowLabel.string = scoreText;
         if (this.coinLabel) this.coinLabel.string = `\u91d1\u5e01 ${stats.runCoins}`;
         if (this.distanceLabel) this.distanceLabel.string = `${Math.floor(stats.distance)}m`;
         if (this.multiplierLabel) this.multiplierLabel.string = `x${stats.multiplier.toFixed(2)}`;
@@ -188,9 +192,9 @@ export class GameHud extends Component {
 
     private buildCurrency(_panelFrame: SpriteFrame | null, icons: HudIconFrames): void {
         if (!this.currencyRoot) return;
-        const diamond = this.makeCurrencyPill('DiamondCurrency', new Vec3(420, 318, 0), icons.diamond, new Color(75, 104, 172, 255));
+        const diamond = this.makeCurrencyPill('DiamondCurrency', new Vec3(426, 318, 0), icons.diamond, new Color(75, 104, 172, 255));
         this.diamondLabel = diamond.label;
-        const coin = this.makeCurrencyPill('CoinCurrency', new Vec3(546, 318, 0), icons.coin, new Color(157, 97, 24, 255));
+        const coin = this.makeCurrencyPill('CoinCurrency', new Vec3(558, 318, 0), icons.coin, new Color(157, 97, 24, 255));
         this.totalCoinLabel = coin.label;
     }
 
@@ -202,14 +206,13 @@ export class GameHud extends Component {
         this.settingsNode = this.makeButton('SettingsButton', buttonFrame, new Vec3(286, -214, 0), TXT.settings, this.menuRoot, 176, 54, 22).node;
     }
 
-    private buildGameHud(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null): void {
+    private buildGameHud(icons: HudIconFrames): void {
         if (!this.gameHudRoot) return;
-        this.makePanel('TopHudPanel', panelFrame, new Vec3(-86, 326, 0), 790, 48, this.gameHudRoot);
-        this.scoreLabel = this.makeLabel('ScoreLabel', '\u5206\u6570 0', 19, new Vec3(-430, 326, 0), new Color(82, 71, 72, 255), 160, this.gameHudRoot);
-        this.coinLabel = this.makeLabel('CoinLabel', '\u91d1\u5e01 0', 19, new Vec3(-270, 326, 0), new Color(157, 97, 24, 255), 130, this.gameHudRoot);
-        this.distanceLabel = this.makeLabel('DistanceLabel', '0m', 19, new Vec3(-135, 326, 0), new Color(48, 139, 139, 255), 94, this.gameHudRoot);
-        this.multiplierLabel = this.makeLabel('MultiplierLabel', 'x1.00', 19, new Vec3(-26, 326, 0), new Color(219, 102, 64, 255), 96, this.gameHudRoot);
-        this.pauseNode = this.makeButton('PauseButton', buttonFrame, new Vec3(104, 326, 0), TXT.pause, this.gameHudRoot, 112, 44, 18).node;
+        this.scoreShadowLabel = this.makeLabel('ScoreShadowLabel', '\u5206\u6570 0', 34, new Vec3(-515, 312, 0), new Color(117, 65, 45, 220), 260, this.gameHudRoot);
+        this.scoreLabel = this.makeLabel('ScoreLabel', '\u5206\u6570 0', 34, new Vec3(-520, 318, 0), new Color(255, 238, 158, 255), 260, this.gameHudRoot);
+        this.scoreShadowLabel.isBold = true;
+        this.scoreLabel.isBold = true;
+        this.pauseNode = this.makeImage('PauseButton', icons.pause, new Vec3(596, 320, 0), 34, 34, this.gameHudRoot);
         this.comboLabel = this.makeLabel('ComboLabel', '', 23, new Vec3(0, 226, 0), new Color(255, 152, 84, 255), 260, this.gameHudRoot);
     }
 
@@ -298,7 +301,7 @@ export class GameHud extends Component {
     }
 
     private makeButton(name: string, frame: SpriteFrame | null, pos: Vec3, text: string, parent = this.node, width = 300, height = 90, fontSize = 30): { node: Node; label: Label } {
-        const node = this.makeImage(name, frame, pos, width * 0.25, height * 0.25, parent);
+        const node = this.makeImage(name, frame, pos, width, height, parent);
         const label = this.makeLabel(`${name}Text`, text, fontSize, Vec3.ZERO, new Color(111, 64, 39, 255), width - 28, node);
         return { node, label };
     }
@@ -306,16 +309,16 @@ export class GameHud extends Component {
     private makeCurrencyPill(name: string, pos: Vec3, iconFrame: SpriteFrame, textColor: Color): { node: Node; label: Label } {
         const node = this.makeNode(name, this.currencyRoot ?? this.node, pos);
         const transform = node.addComponent(UITransform);
-        transform.setContentSize(27, 9);
+        transform.setContentSize(126, 42);
         const bg = node.addComponent(Graphics);
         bg.fillColor = new Color(255, 244, 203, 224);
         bg.strokeColor = new Color(170, 105, 48, 190);
-        bg.lineWidth = 1;
-        bg.roundRect(-13.5, -4.5, 27, 9, 4);
+        bg.lineWidth = 2;
+        bg.roundRect(-63, -21, 126, 42, 16);
         bg.fill();
         bg.stroke();
-        this.makeImage(`${name}Icon`, iconFrame, new Vec3(-8, 0, 0), 7, 7, node);
-        const label = this.makeLabel(`${name}Label`, '0', 8, new Vec3(5, 0, 0), textColor, 16, node);
+        this.makeImage(`${name}Icon`, iconFrame, new Vec3(-39, 0, 0), 24, 24, node);
+        const label = this.makeLabel(`${name}Label`, '0', 22, new Vec3(18, 0, 0), textColor, 76, node);
         return { node, label };
     }
 
@@ -328,10 +331,10 @@ export class GameHud extends Component {
         parent.addChild(node);
         node.setPosition(pos);
         const transform = node.addComponent(UITransform);
-        transform.setContentSize(width, height);
         const sprite = node.addComponent(Sprite);
-        if (frame) sprite.spriteFrame = frame;
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        if (frame) sprite.spriteFrame = frame;
+        transform.setContentSize(width, height);
         return node;
     }
 

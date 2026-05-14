@@ -47,10 +47,10 @@ export class FeedbackManager extends Component {
         }
         const node = this.makeNode('CoinPop', this.floatRoot, position);
         const transform = node.addComponent(UITransform);
-        transform.setContentSize(38, 38);
         const sprite = node.addComponent(Sprite);
-        sprite.spriteFrame = this.coinFrame;
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = this.coinFrame;
+        transform.setContentSize(38, 38);
         tween(node)
             .to(0.1, { scale: new Vec3(1.28, 1.28, 1) })
             .parallel(
@@ -67,11 +67,11 @@ export class FeedbackManager extends Component {
         }
         const node = this.makeNode('PowerPulse', this.pulseRoot, position);
         const transform = node.addComponent(UITransform);
-        transform.setContentSize(size, size);
         const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
         sprite.spriteFrame = frame;
         sprite.color = color;
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        transform.setContentSize(size, size);
         node.setScale(0.45, 0.45, 1);
         tween(node)
             .to(0.18, { scale: new Vec3(1.18, 1.18, 1) })

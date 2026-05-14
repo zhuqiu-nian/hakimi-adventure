@@ -32,7 +32,7 @@ type GameState = 'menu' | 'settings' | 'upgrade' | 'playing' | 'pause' | 'gameov
 type ObstacleKind = 'mushroom' | 'cactus' | 'crate' | 'spikes' | 'lowSign' | 'hangingBell';
 type PowerKind = keyof PowerState;
 type SkinId = 'classic' | 'berry' | 'mint';
-type CoinPatternKind = 'cat' | 'dog' | 'fish' | 'paw' | 'heart';
+type CoinPatternKind = 'cat' | 'bigCat' | 'dog' | 'fish' | 'paw' | 'heart' | 'star' | 'crown' | 'smile' | 'house';
 
 type CoursePattern = {
     length: number;
@@ -77,6 +77,7 @@ type TextureSet = {
     panel: SpriteFrame;
     badge: SpriteFrame;
     logo: SpriteFrame;
+    pauseIcon: SpriteFrame;
 };
 
 type GameSave = {
@@ -168,19 +169,19 @@ export class GameManager extends Component {
         { length: 620, obstacles: [{ x: 230, kind: 'mushroom' }], coinArcs: [{ x: 360, y: 158, count: 5 }], coinPatterns: [{ x: 470, y: 230, kind: 'paw' }] },
         { length: 680, obstacles: [{ x: 270, kind: 'spikes' }], coinArcs: [{ x: 90, y: 104, count: 5 }, { x: 430, y: 178, count: 5 }], powers: [{ x: 580, y: 208, kind: 'magnet' }] },
         { length: 700, obstacles: [{ x: 300, kind: 'crate' }], coinArcs: [{ x: 110, y: 115, count: 5 }], coinPatterns: [{ x: 440, y: 230, kind: 'heart' }], powers: [{ x: 610, y: 212, kind: 'magnet' }] },
-        { length: 740, minDistance: 260, obstacles: [{ x: 280, kind: 'cactus' }], coinArcs: [{ x: 80, y: 125, count: 4 }, { x: 450, y: 230, count: 6 }], powers: [{ x: 640, y: 230, kind: 'shield' }] },
+        { length: 740, minDistance: 260, obstacles: [{ x: 280, kind: 'cactus' }], coinArcs: [{ x: 80, y: 125, count: 4 }], coinPatterns: [{ x: 470, y: 238, kind: 'star' }], powers: [{ x: 640, y: 230, kind: 'shield' }] },
         { length: 780, minDistance: 520, obstacles: [{ x: 300, kind: 'lowSign' }], coinPatterns: [{ x: 470, y: 160, kind: 'fish' }] },
         { length: 860, minDistance: 760, obstacles: [{ x: 220, kind: 'mushroom' }, { x: 560, kind: 'spikes' }], coinArcs: [{ x: 350, y: 220, count: 6 }] },
-        { length: 900, minDistance: 980, obstacles: [{ x: 240, kind: 'crate' }, { x: 610, kind: 'cactus' }], coinPatterns: [{ x: 410, y: 250, kind: 'cat' }], powers: [{ x: 720, y: 260, kind: 'score' }] },
+        { length: 920, minDistance: 980, obstacles: [{ x: 240, kind: 'crate' }, { x: 650, kind: 'cactus' }], coinPatterns: [{ x: 450, y: 250, kind: 'bigCat' }], powers: [{ x: 760, y: 260, kind: 'score' }] },
         { length: 900, minDistance: 1200, obstacles: [{ x: 260, kind: 'hangingBell' }, { x: 650, kind: 'mushroom' }], coinArcs: [{ x: 145, y: 105, count: 4 }, { x: 510, y: 230, count: 5 }] },
         { length: 940, minDistance: 1500, obstacles: [{ x: 270, kind: 'mushroom' }, { x: 650, kind: 'spikes' }], coinArcs: [{ x: 130, y: 150, count: 5 }], coinPatterns: [{ x: 690, y: 235, kind: 'dog' }], powers: [{ x: 480, y: 238, kind: 'dash' }] },
-        { length: 980, minDistance: 1800, obstacles: [{ x: 260, kind: 'cactus' }, { x: 690, kind: 'hangingBell' }], coinArcs: [{ x: 430, y: 210, count: 7 }], powers: [{ x: 790, y: 255, kind: 'shield' }] },
-        { length: 1020, minDistance: 2150, obstacles: [{ x: 250, kind: 'crate' }, { x: 620, kind: 'spikes' }, { x: 930, kind: 'mushroom' }], coinArcs: [{ x: 110, y: 120, count: 5 }, { x: 720, y: 240, count: 5 }] },
-        { length: 1040, minDistance: 2500, obstacles: [{ x: 280, kind: 'spikes' }, { x: 690, kind: 'cactus' }], coinArcs: [{ x: 430, y: 250, count: 7 }], powers: [{ x: 860, y: 245, kind: 'score' }] },
-        { length: 1080, minDistance: 2900, obstacles: [{ x: 260, kind: 'lowSign' }, { x: 670, kind: 'crate' }], coinArcs: [{ x: 390, y: 165, count: 5 }, { x: 820, y: 235, count: 6 }] },
-        { length: 1120, minDistance: 3300, obstacles: [{ x: 300, kind: 'cactus' }, { x: 760, kind: 'cactus' }], coinArcs: [{ x: 130, y: 110, count: 4 }, { x: 560, y: 245, count: 6 }], powers: [{ x: 920, y: 245, kind: 'dash' }] },
-        { length: 1180, minDistance: 3800, obstacles: [{ x: 260, kind: 'crate' }, { x: 680, kind: 'spikes' }, { x: 1010, kind: 'lowSign' }], coinArcs: [{ x: 470, y: 220, count: 6 }, { x: 860, y: 160, count: 5 }] },
-        { length: 1240, minDistance: 4300, obstacles: [{ x: 280, kind: 'lowSign' }, { x: 720, kind: 'mushroom' }, { x: 1080, kind: 'crate' }], coinArcs: [{ x: 130, y: 105, count: 4 }, { x: 840, y: 260, count: 7 }], powers: [{ x: 1040, y: 245, kind: 'magnet' }] },
+        { length: 980, minDistance: 1800, obstacles: [{ x: 260, kind: 'cactus' }, { x: 690, kind: 'hangingBell' }], coinPatterns: [{ x: 430, y: 238, kind: 'crown' }], powers: [{ x: 790, y: 255, kind: 'shield' }] },
+        { length: 1020, minDistance: 2150, obstacles: [{ x: 250, kind: 'crate' }, { x: 620, kind: 'spikes' }, { x: 930, kind: 'mushroom' }], coinArcs: [{ x: 110, y: 120, count: 5 }], coinPatterns: [{ x: 720, y: 240, kind: 'smile' }] },
+        { length: 1040, minDistance: 2500, obstacles: [{ x: 280, kind: 'spikes' }, { x: 690, kind: 'cactus' }], coinPatterns: [{ x: 430, y: 250, kind: 'house' }], powers: [{ x: 860, y: 245, kind: 'score' }] },
+        { length: 1080, minDistance: 2900, obstacles: [{ x: 260, kind: 'lowSign' }, { x: 670, kind: 'crate' }], coinArcs: [{ x: 390, y: 165, count: 5 }], coinPatterns: [{ x: 820, y: 238, kind: 'cat' }] },
+        { length: 1120, minDistance: 3300, obstacles: [{ x: 300, kind: 'cactus' }, { x: 760, kind: 'cactus' }], coinArcs: [{ x: 130, y: 110, count: 4 }], coinPatterns: [{ x: 560, y: 245, kind: 'bigCat' }], powers: [{ x: 920, y: 245, kind: 'dash' }] },
+        { length: 1180, minDistance: 3800, obstacles: [{ x: 260, kind: 'crate' }, { x: 680, kind: 'spikes' }, { x: 1010, kind: 'lowSign' }], coinPatterns: [{ x: 470, y: 220, kind: 'star' }, { x: 860, y: 160, kind: 'fish' }] },
+        { length: 1240, minDistance: 4300, obstacles: [{ x: 280, kind: 'lowSign' }, { x: 720, kind: 'mushroom' }, { x: 1080, kind: 'crate' }], coinArcs: [{ x: 130, y: 105, count: 4 }], coinPatterns: [{ x: 840, y: 260, kind: 'crown' }], powers: [{ x: 1040, y: 245, kind: 'magnet' }] },
     ];
 
     public async start(): Promise<void> {
@@ -261,7 +262,7 @@ export class GameManager extends Component {
 
         this.obstacleRoot = this.makeNode('Obstacles', this.worldRoot, Vec3.ZERO);
         this.itemRoot = this.makeNode('CollectiblesAndPowerups', this.worldRoot, Vec3.ZERO);
-        this.player = this.makeSprite('HakimiRunner', this.worldRoot, this.textures.runner, 210, 210, new Vec3(this.playerX, this.playerGroundY, 0));
+        this.player = this.makeSprite('HakimiRunner', this.worldRoot, this.textures.runner, 188, 188, new Vec3(this.playerX, this.playerGroundY, 0));
         this.playerFxRoot = this.makeNode('PlayerFxRoot', this.player, Vec3.ZERO);
         this.buildPlayerEffects();
         const playerSprite = this.player.getComponent(Sprite);
@@ -291,6 +292,7 @@ export class GameManager extends Component {
             scoreStar: this.textures.scoreStar,
             dash: this.textures.dash,
             badge: this.textures.badge,
+            pause: this.textures.pauseIcon,
         };
         this.hud.build(this.textures.button, this.textures.panel, this.textures.logo, icons);
         this.feedbackRoot = this.makeNode('FeedbackRoot', uiRoot, Vec3.ZERO);
@@ -305,10 +307,10 @@ export class GameManager extends Component {
             return;
         }
         this.powerFxNodes = {
-            magnet: this.makeSprite('MagnetFx', this.playerFxRoot, this.textures.magnetFx, 220, 220, new Vec3(0, 4, 0)),
-            shield: this.makeSprite('ShieldFx', this.playerFxRoot, this.textures.shieldFx, 198, 198, new Vec3(0, 2, 0)),
-            dash: this.makeSprite('DashFx', this.playerFxRoot, this.textures.dashFx, 260, 128, new Vec3(-94, -8, 0)),
-            score: this.makeSprite('ScoreFx', this.playerFxRoot, this.textures.scoreFx, 206, 206, new Vec3(0, 8, 0)),
+            magnet: this.makeSprite('MagnetFx', this.playerFxRoot, this.textures.magnetFx, 198, 198, new Vec3(0, 4, 0)),
+            shield: this.makeSprite('ShieldFx', this.playerFxRoot, this.textures.shieldFx, 178, 178, new Vec3(0, 2, 0)),
+            dash: this.makeSprite('DashFx', this.playerFxRoot, this.textures.dashFx, 234, 116, new Vec3(-84, -8, 0)),
+            score: this.makeSprite('ScoreFx', this.playerFxRoot, this.textures.scoreFx, 186, 186, new Vec3(0, 8, 0)),
         };
         for (const kind of POWER_KINDS) {
             const node = this.powerFxNodes[kind];
@@ -468,7 +470,8 @@ export class GameManager extends Component {
         this.spawnPowerup(560, 'magnet', 170);
         this.spawnPowerup(880, 'shield', 190);
         this.spawnPowerup(1180, 'score', 170);
-        this.nextSpawnX = 1280;
+        this.spawnObstacle(1520, 'hangingBell');
+        this.nextSpawnX = 1960;
         this.spawnWhileNeeded();
     }
 
@@ -501,12 +504,12 @@ export class GameManager extends Component {
             return;
         }
         const data = {
-            mushroom: { frame: this.textures.mushroom, width: 88, height: 80, y: this.surfaceY + 40, padX: 18, padY: 16, passType: 'jump' as ObstaclePassType },
-            cactus: { frame: this.textures.cactus, width: 76, height: 86, y: this.surfaceY + 43, padX: 16, padY: 12, passType: 'jump' as ObstaclePassType },
-            crate: { frame: this.textures.crate, width: 90, height: 76, y: this.surfaceY + 38, padX: 16, padY: 12, passType: 'jump' as ObstaclePassType },
-            spikes: { frame: this.textures.spikes, width: 92, height: 54, y: this.surfaceY + 27, padX: 14, padY: 9, passType: 'jump' as ObstaclePassType },
-            lowSign: { frame: this.textures.lowSign, width: 142, height: 74, y: this.surfaceY + 142, padX: 18, padY: 14, passType: 'slide' as ObstaclePassType },
-            hangingBell: { frame: this.textures.hangingBell, width: 164, height: 102, y: this.surfaceY + 166, padX: 20, padY: 16, passType: 'slide' as ObstaclePassType },
+            mushroom: { frame: this.textures.mushroom, width: 74, height: 68, y: this.surfaceY + 34, padX: 16, padY: 14, passType: 'jump' as ObstaclePassType },
+            cactus: { frame: this.textures.cactus, width: 66, height: 78, y: this.surfaceY + 39, padX: 14, padY: 12, passType: 'jump' as ObstaclePassType },
+            crate: { frame: this.textures.crate, width: 78, height: 66, y: this.surfaceY + 33, padX: 14, padY: 11, passType: 'jump' as ObstaclePassType },
+            spikes: { frame: this.textures.spikes, width: 82, height: 46, y: this.surfaceY + 23, padX: 13, padY: 8, passType: 'jump' as ObstaclePassType },
+            lowSign: { frame: this.textures.lowSign, width: 126, height: 66, y: this.surfaceY + 118, padX: 17, padY: 13, passType: 'slide' as ObstaclePassType },
+            hangingBell: { frame: this.textures.hangingBell, width: 146, height: 90, y: this.surfaceY + 132, padX: 18, padY: 15, passType: 'slide' as ObstaclePassType },
         }[kind];
         const node = this.makeSprite(`Obstacle_${kind}`, this.obstacleRoot, data.frame, data.width, data.height, new Vec3(x, data.y, 0));
         const obstacle = node.addComponent(Obstacle);
@@ -533,6 +536,16 @@ export class GameManager extends Component {
                 [0, 2], [5, 2],
                 [1, 3], [2, 3], [3, 3], [4, 3],
             ],
+            bigCat: [
+                [1, 0], [2, 0], [6, 0], [7, 0],
+                [0, 1], [3, 1], [5, 1], [8, 1],
+                [0, 2], [8, 2],
+                [0, 3], [2, 3], [6, 3], [8, 3],
+                [0, 4], [3, 4], [4, 4], [5, 4], [8, 4],
+                [1, 5], [2, 5], [4, 5], [6, 5], [7, 5],
+                [2, 6], [3, 6], [4, 6], [5, 6], [6, 6],
+                [3, 7], [5, 7],
+            ],
             dog: [
                 [0, 0], [5, 0],
                 [0, 1], [1, 1], [4, 1], [5, 1],
@@ -555,9 +568,35 @@ export class GameManager extends Component {
                 [1, 2], [3, 2],
                 [2, 3],
             ],
+            star: [
+                [2, 0],
+                [1, 1], [2, 1], [3, 1],
+                [0, 2], [1, 2], [2, 2], [3, 2], [4, 2],
+                [1, 3], [3, 3],
+                [0, 4], [4, 4],
+            ],
+            crown: [
+                [0, 0], [2, 0], [4, 0],
+                [0, 1], [1, 1], [2, 1], [3, 1], [4, 1],
+                [0, 2], [1, 2], [2, 2], [3, 2], [4, 2],
+                [0, 3], [1, 3], [2, 3], [3, 3], [4, 3],
+            ],
+            smile: [
+                [1, 0], [4, 0],
+                [0, 2], [5, 2],
+                [1, 3], [4, 3],
+                [2, 4], [3, 4],
+            ],
+            house: [
+                [2, 0],
+                [1, 1], [2, 1], [3, 1],
+                [0, 2], [1, 2], [2, 2], [3, 2], [4, 2],
+                [0, 3], [2, 3], [4, 3],
+                [0, 4], [1, 4], [2, 4], [3, 4], [4, 4],
+            ],
         };
         const points = maps[kind];
-        const step = 38;
+        const step = kind === 'bigCat' ? 34 : 38;
         const width = Math.max(...points.map((point) => point[0])) * step;
         const height = Math.max(...points.map((point) => point[1])) * step;
         for (const [gridX, gridY] of points) {
@@ -577,7 +616,7 @@ export class GameManager extends Component {
             return;
         }
         const frame = this.frameForCollectible(kind);
-        const size = kind === 'coin' ? 10 : 13;
+        const size = kind === 'coin' ? 32 : 44;
         const node = this.makeSprite(kind === 'coin' ? 'Coin' : `Power_${kind}`, this.itemRoot, frame, size, size, new Vec3(x, y, 0));
         const collectible = node.addComponent(Collectible);
         collectible.kind = kind;
@@ -642,7 +681,6 @@ export class GameManager extends Component {
                 this.combo += value;
                 this.comboTimer = 2.2;
                 this.score += (100 + Math.min(300, this.combo * 8)) * value * this.currentMultiplier();
-                this.feedback?.showCoin(itemPos, value);
             } else {
                 collectible.collect();
                 this.activatePower(collectible.kind);
@@ -824,7 +862,7 @@ export class GameManager extends Component {
         }
         if (event.keyCode === KeyCode.ARROW_DOWN || event.keyCode === KeyCode.KEY_S) {
             if (this.state === 'playing') {
-                this.runner?.slide();
+                this.runner?.slide(true);
             }
         }
         if (event.keyCode === KeyCode.KEY_P) {
@@ -850,6 +888,9 @@ export class GameManager extends Component {
         if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.KEY_W || event.keyCode === KeyCode.ARROW_UP) {
             this.spaceHeld = false;
             this.runner?.stopGlide();
+        }
+        if (event.keyCode === KeyCode.ARROW_DOWN || event.keyCode === KeyCode.KEY_S) {
+            this.runner?.stopSlide();
         }
     }
 
@@ -1056,20 +1097,6 @@ export class GameManager extends Component {
             city,
             ground,
             foregroundDeco,
-            runner,
-            runnerRun0,
-            runnerRun1,
-            runnerRun2,
-            runnerRun3,
-            runnerJump0,
-            runnerJump1,
-            runnerFall,
-            runnerGlideStart,
-            runnerGlide,
-            runnerGlideEnd,
-            runnerSlideStart,
-            runnerSlideLoop,
-            runnerSlideEnd,
             runnerPowerMagnet,
             runnerPowerShield,
             runnerPowerDash,
@@ -1094,6 +1121,7 @@ export class GameManager extends Component {
             panel,
             badge,
             logo,
+            pauseIcon,
         ] = await Promise.all([
             this.loadSpriteFrame('textures/world/seamless_bg'),
             this.loadSpriteFrame('textures/world/sky'),
@@ -1101,20 +1129,6 @@ export class GameManager extends Component {
             this.loadSpriteFrame('textures/world/city'),
             this.loadSpriteFrame('textures/world/ground_tile'),
             this.loadSpriteFrame('textures/world/foreground_deco'),
-            this.loadSpriteFrame('textures/runner/runner'),
-            this.loadSpriteFrame('textures/runner/runner_run_0'),
-            this.loadSpriteFrame('textures/runner/runner_run_1'),
-            this.loadSpriteFrame('textures/runner/runner_run_2'),
-            this.loadSpriteFrame('textures/runner/runner_run_3'),
-            this.loadSpriteFrame('textures/runner/runner_jump_0'),
-            this.loadSpriteFrame('textures/runner/runner_jump_1'),
-            this.loadSpriteFrame('textures/runner/runner_fall_0'),
-            this.loadSpriteFrame('textures/runner/runner_glide_start'),
-            this.loadSpriteFrame('textures/runner/runner_glide'),
-            this.loadSpriteFrame('textures/runner/runner_glide_end'),
-            this.loadSpriteFrame('textures/runner/runner_slide_start'),
-            this.loadSpriteFrame('textures/runner/runner_slide'),
-            this.loadSpriteFrame('textures/runner/runner_slide_end'),
             this.loadSpriteFrame('textures/runner/runner_power_magnet'),
             this.loadSpriteFrame('textures/runner/runner_power_shield'),
             this.loadSpriteFrame('textures/runner/runner_power_dash'),
@@ -1139,6 +1153,13 @@ export class GameManager extends Component {
             this.loadSpriteFrame('textures/ui/panel'),
             this.loadSpriteFrame('textures/ui/badge'),
             this.loadSpriteFrame('textures/ui/main_logo'),
+            this.loadSpriteFrame('textures/ui/pause_icon'),
+        ]);
+        const [runnerRun, runnerJump, runnerSlide, runnerGlide] = await Promise.all([
+            this.loadSpriteFrames('textures/runner/v2/run', 26),
+            this.loadSpriteFrames('textures/runner/v2/jump_land', 18),
+            this.loadSpriteFrames('textures/runner/v2/slide', 18),
+            this.loadSpriteFrames('textures/runner/v2/glide_land', 20),
         ]);
         return {
             seamlessBg,
@@ -1147,12 +1168,12 @@ export class GameManager extends Component {
             city,
             ground,
             foregroundDeco,
-            runner,
-            runnerRun: [runnerRun0, runnerRun1, runnerRun2, runnerRun1],
-            runnerJump: [runnerJump0, runnerJump1],
-            runnerFall,
-            runnerGlide: [runnerGlideStart, runnerGlide],
-            runnerSlide: [runnerSlideStart, runnerSlideLoop, runnerSlideEnd],
+            runner: runnerRun[0],
+            runnerRun,
+            runnerJump,
+            runnerFall: runnerJump[Math.min(12, runnerJump.length - 1)],
+            runnerGlide,
+            runnerSlide,
             runnerPower: {
                 magnet: runnerPowerMagnet,
                 shield: runnerPowerShield,
@@ -1179,7 +1200,17 @@ export class GameManager extends Component {
             panel,
             badge,
             logo,
+            pauseIcon,
         };
+    }
+
+    private loadSpriteFrames(prefix: string, count: number): Promise<SpriteFrame[]> {
+        const tasks: Array<Promise<SpriteFrame>> = [];
+        for (let i = 0; i < count; i++) {
+            const suffix = i < 10 ? `0${i}` : `${i}`;
+            tasks.push(this.loadSpriteFrame(`${prefix}_${suffix}`));
+        }
+        return Promise.all(tasks);
     }
 
     private loadSpriteFrame(path: string): Promise<SpriteFrame> {
@@ -1204,10 +1235,10 @@ export class GameManager extends Component {
     private makeSprite(name: string, parent: Node, frame: SpriteFrame, width: number, height: number, pos: Vec3): Node {
         const node = this.makeNode(name, parent, pos);
         const transform = node.addComponent(UITransform);
-        transform.setContentSize(width, height);
         const sprite = node.addComponent(Sprite);
-        sprite.spriteFrame = frame;
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = frame;
+        transform.setContentSize(width, height);
         return node;
     }
 
