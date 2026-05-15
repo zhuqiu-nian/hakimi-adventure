@@ -24,6 +24,7 @@ import { GameHud, HudIconFrames, HudSaveView, PowerState, SkinView, UpgradeLevel
 import { Obstacle, ObstaclePassType } from './Obstacle';
 import { ParallaxLayer } from './ParallaxLayer';
 import { RunnerController } from './RunnerController';
+import { AudioManager } from './AudioManager';
 import { WorldScroller } from './WorldScroller';
 
 const { ccclass, property } = _decorator;
@@ -136,6 +137,7 @@ export class GameManager extends Component {
     private runner: RunnerController | null = null;
     private hud: GameHud | null = null;
     private feedback: FeedbackManager | null = null;
+    private audioManager: AudioManager | null = null;
     private powerFxNodes: Partial<Record<PowerKind, Node>> = {};
     private groundScroller: WorldScroller | null = null;
     private parallaxLayers: ParallaxLayer[] = [];
@@ -278,9 +280,15 @@ export class GameManager extends Component {
                 this.textures.runnerSlide,
                 this.textures.runnerFall,
                 this.textures.runnerGlide,
+                this.audioManager,
             );
         }
         this.applySelectedSkin();
+
+        // Wire AudioManager: AudioManager node is sibling of Canvas at scene root
+        const scene = this.node.parent?.parent;
+        const amNode = scene?.getChildByName('AudioManager');
+        this.audioManager = amNode?.getComponent(AudioManager) ?? null;
 
         const uiRoot = this.makeNode('UIRoot', this.node, Vec3.ZERO);
         this.hud = uiRoot.addComponent(GameHud);
@@ -419,6 +427,8 @@ export class GameManager extends Component {
         this.state = 'playing';
         this.hud?.setPlaying();
         this.feedback?.showText('\u51fa\u53d1\uff01', new Vec3(0, 20, 0), new Color(255, 152, 84, 255), 34);
+        this.audioManager?.playBgm('audio/background');
+        this.audioManager?.playSfx('start');
     }
 
     private pauseRun(): void {
@@ -435,6 +445,14 @@ export class GameManager extends Component {
         }
         this.state = 'playing';
         this.hud?.setPlaying();
+    }
+
+    public setBgmVolume(volume: number): void {
+        this.audioManager?.setBgmVolume(volume);
+    }
+
+    public setSfxVolume(volume: number): void {
+        this.audioManager?.setSfxVolume(volume);
     }
 
     private gameOver(): void {
@@ -455,6 +473,7 @@ export class GameManager extends Component {
         this.saveGame();
         this.hud?.setGameOver(finalScore, this.runCoins, this.saveData.totalCoins, this.distance, missionDone, reward);
         this.feedback?.shake(this.worldRoot, 12);
+        this.audioManager?.playSfx('gameover');
         if (this.player) {
             tween(this.player)
                 .to(0.12, { scale: new Vec3(1.25, 0.75, 1) })
@@ -681,9 +700,11 @@ export class GameManager extends Component {
                 this.combo += value;
                 this.comboTimer = 2.2;
                 this.score += (100 + Math.min(300, this.combo * 8)) * value * this.currentMultiplier();
+                this.audioManager?.playSfx('coin');
             } else {
                 collectible.collect();
                 this.activatePower(collectible.kind);
+                this.audioManager?.playSfx('powerup');
                 this.feedback?.showText(`${this.powerName(collectible.kind)}!`, itemPos, new Color(106, 166, 214, 255), 28);
             }
         }

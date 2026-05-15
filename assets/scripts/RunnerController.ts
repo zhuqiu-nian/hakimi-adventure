@@ -1,4 +1,5 @@
 import { _decorator, Component, Sprite, SpriteFrame, Vec3 } from 'cc';
+import { AudioManager } from './AudioManager';
 
 const { ccclass, property } = _decorator;
 
@@ -54,6 +55,7 @@ export class RunnerController extends Component {
     private jumpLandingFrames: SpriteFrame[] = [];
     private glideLandingFrames: SpriteFrame[] = [];
     private landingFrames: SpriteFrame[] = [];
+    private audioManager: AudioManager | null = null;
 
     public setupAnimation(
         sprite: Sprite,
@@ -62,6 +64,7 @@ export class RunnerController extends Component {
         slideFrames: SpriteFrame | SpriteFrame[],
         fallFrame?: SpriteFrame,
         glideFrames?: SpriteFrame | SpriteFrame[],
+        audioManager?: AudioManager | null,
     ): void {
         this.sprite = sprite;
         this.runFrames = runFrames;
@@ -75,6 +78,7 @@ export class RunnerController extends Component {
         this.glideFrames = glideList;
         this.jumpLandingFrames = jumpFrames.slice(Math.max(0, jumpFrames.length - 6));
         this.glideLandingFrames = glideList.slice(Math.max(0, glideList.length - 6));
+        this.audioManager = audioManager ?? null;
         this.setFrame(this.runFrames[0]);
     }
 
@@ -110,6 +114,7 @@ export class RunnerController extends Component {
             this.actionTimer = 0;
             this.isAirborne = true;
             this.setFrame(this.jumpFrames[0]);
+            this.audioManager?.playSfx('jump');
             return true;
         }
 
@@ -119,6 +124,7 @@ export class RunnerController extends Component {
             this.actionTimer = 0;
             this.isAirborne = true;
             this.setFrame(this.jumpFrames[1] ?? this.jumpFrames[0]);
+            this.audioManager?.playSfx('jump');
             return true;
         }
 
@@ -166,6 +172,7 @@ export class RunnerController extends Component {
         this.actionTimer = 0;
         this.node.setScale(this.baseScale);
         this.setFrame(this.slideFrames[0]);
+        this.audioManager?.playSfx('slide');
         return true;
     }
 
