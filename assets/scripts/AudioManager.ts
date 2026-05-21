@@ -63,7 +63,7 @@ export class AudioManager extends Component {
     }
 
     resumeBgm(): void {
-        this.bgmSource?.resume();
+        this.bgmSource?.play();
     }
 
     playSfx(key: string): void {

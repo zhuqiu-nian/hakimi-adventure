@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, Component, resources } from 'cc';
+import { _decorator, AudioClip, Component, director, resources } from 'cc';
 
 const { ccclass, property } = _decorator;
 
@@ -72,8 +72,7 @@ export class SoundFx extends Component {
     }
 
     private _findManager(): import('./AudioManager').AudioManager | null {
-        const root = scene.root;
-        const node = root?.getChildByName(this.audioManagerNode);
+        const node = director.getScene()?.getChildByName(this.audioManagerNode);
         return node?.getComponent('AudioManager') as import('./AudioManager').AudioManager ?? null;
     }
 }

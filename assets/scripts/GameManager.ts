@@ -20,7 +20,7 @@ import {
 } from 'cc';
 import { Collectible, CollectibleKind } from './Collectible';
 import { FeedbackManager } from './FeedbackManager';
-import { GameHud, HudIconFrames, HudSaveView, PowerState, SkinView, UpgradeLevels } from './GameHud';
+import { AchievementView, GameHud, GameOverView, HudIconFrames, HudSaveView, LeaderboardEntryView, MissionView, PowerState, SkinView, UpgradeLevels } from './GameHud';
 import { Obstacle, ObstaclePassType } from './Obstacle';
 import { ParallaxLayer } from './ParallaxLayer';
 import { RunnerController } from './RunnerController';
@@ -29,11 +29,13 @@ import { WorldScroller } from './WorldScroller';
 
 const { ccclass, property } = _decorator;
 
-type GameState = 'menu' | 'settings' | 'upgrade' | 'playing' | 'pause' | 'gameover';
+type GameState = 'menu' | 'settings' | 'upgrade' | 'playing' | 'pause' | 'revive' | 'gameover';
 type ObstacleKind = 'mushroom' | 'cactus' | 'crate' | 'spikes' | 'lowSign' | 'hangingBell';
 type PowerKind = keyof PowerState;
 type SkinId = 'classic' | 'berry' | 'mint';
 type CoinPatternKind = 'cat' | 'bigCat' | 'dog' | 'fish' | 'paw' | 'heart' | 'star' | 'crown' | 'smile' | 'house';
+type MissionId = 'coins' | 'distance' | 'dodges';
+type AchievementId = 'first1k' | 'coinCollector' | 'combo20' | 'shieldGuard';
 
 type CoursePattern = {
     length: number;
@@ -88,6 +90,28 @@ type GameSave = {
     unlockedSkins: SkinId[];
     upgrades: UpgradeLevels;
     missionsCompleted: number;
+    leaderboard: LeaderboardEntry[];
+    achievements: Partial<Record<AchievementId, boolean>>;
+};
+
+type LeaderboardEntry = {
+    score: number;
+    distance: number;
+    coins: number;
+    date: string;
+};
+
+type MissionDefinition = {
+    id: MissionId;
+    label: string;
+    target: number;
+    reward: number;
+};
+
+type AchievementDefinition = {
+    id: AchievementId;
+    label: string;
+    reward: number;
 };
 
 const POWER_KINDS: PowerKind[] = ['magnet', 'shield', 'score', 'dash'];
@@ -105,6 +129,17 @@ const SKINS: Array<{ id: SkinId; label: string; cost: number; color: Color }> = 
     { id: 'berry', label: '\u8349\u8393\u54c8\u57fa\u7c73', cost: 160, color: new Color(255, 214, 226, 255) },
     { id: 'mint', label: '\u8584\u8377\u54c8\u57fa\u7c73', cost: 220, color: new Color(213, 255, 233, 255) },
 ];
+const MISSION_DEFS: MissionDefinition[] = [
+    { id: 'coins', label: '\u91d1\u5e01', target: 40, reward: 18 },
+    { id: 'distance', label: '\u91cc\u7a0b', target: 600, reward: 18 },
+    { id: 'dodges', label: '\u8d8a\u8fc7', target: 8, reward: 20 },
+];
+const ACHIEVEMENT_DEFS: AchievementDefinition[] = [
+    { id: 'first1k', label: '\u9996\u6b21 1000m', reward: 50 },
+    { id: 'coinCollector', label: '\u7d2f\u8ba1 500 \u91d1\u5e01', reward: 80 },
+    { id: 'combo20', label: '\u5355\u5c40 20 \u8fde\u51fb', reward: 45 },
+    { id: 'shieldGuard', label: '\u62a4\u76fe\u62b5\u6321 3 \u6b21', reward: 45 },
+];
 
 const DEFAULT_SAVE: GameSave = {
     bestScore: 0,
@@ -113,6 +148,8 @@ const DEFAULT_SAVE: GameSave = {
     unlockedSkins: ['classic'],
     upgrades: { ...DEFAULT_UPGRADES },
     missionsCompleted: 0,
+    leaderboard: [],
+    achievements: {},
 };
 
 @ccclass('GameManager')
@@ -149,8 +186,11 @@ export class GameManager extends Component {
     private runCoins = 0;
     private score = 0;
     private combo = 0;
+    private maxCombo = 0;
     private comboTimer = 0;
     private dodges = 0;
+    private shieldBlocks = 0;
+    private reviveUsed = false;
     private nextSpawnX = 720;
     private spaceHeld = false;
     private touchHeld = false;
@@ -251,7 +291,7 @@ export class GameManager extends Component {
         this.worldRoot = this.makeNode('World', this.node, Vec3.ZERO);
 
         const bgRoot = this.makeNode('Parallax', this.worldRoot, Vec3.ZERO);
-        this.createParallaxLayer(bgRoot, 'SeamlessKawaiiBackground', this.textures.seamlessBg, 0.12, 1280, 720, 0);
+        this.createParallaxLayer(bgRoot, 'SeamlessKawaiiBackground', this.textures.seamlessBg, 0, 1280, 720, 0);
         this.createDecorLayer(bgRoot);
 
         const groundLayer = this.makeNode('GroundLayer', this.worldRoot, new Vec3(0, this.surfaceY - 46, 0));
@@ -355,14 +395,19 @@ export class GameManager extends Component {
         addButton(this.hud?.getStartNode() ?? null, this.onStartPressed);
         addButton(this.hud?.getSettingsNode() ?? null, this.onSettingsPressed);
         addButton(this.hud?.getUpgradeNode() ?? null, this.onUpgradePressed);
+        addButton(this.hud?.getLeaderboardNode() ?? null, this.onLeaderboardPressed);
         addButton(this.hud?.getPauseNode() ?? null, this.onPausePressed);
         addButton(this.hud?.getContinueNode() ?? null, this.onContinuePressed);
         addButton(this.hud?.getMenuNode() ?? null, this.onMenuPressed);
         addButton(this.hud?.getSettingsBackNode() ?? null, this.onBackPressed);
         addButton(this.hud?.getUpgradeBackNode() ?? null, this.onBackPressed);
+        addButton(this.hud?.getLeaderboardBackNode() ?? null, this.onLeaderboardBackPressed);
+        addButton(this.hud?.getReviveAdNode() ?? null, this.onReviveAdPressed);
+        addButton(this.hud?.getReviveGiveUpNode() ?? null, this.onReviveGiveUpPressed);
         addButton(this.hud?.getRetryNode() ?? null, this.onStartPressed);
         addButton(this.hud?.getResultMenuNode() ?? null, this.onMenuPressed);
         addButton(this.hud?.getResultShopNode() ?? null, this.onUpgradePressed);
+        addButton(this.hud?.getResultLeaderboardNode() ?? null, this.onLeaderboardPressed);
         for (const kind of POWER_KINDS) {
             addButton(this.hud?.getUpgradeButton(kind) ?? null, () => this.buyUpgrade(kind));
         }
@@ -375,10 +420,11 @@ export class GameManager extends Component {
         const layer = this.makeNode(name, parent, new Vec3(0, y, 0));
         const parallax = layer.addComponent(ParallaxLayer);
         parallax.ratio = ratio;
-        parallax.wrapWidth = 1280;
+        parallax.wrapWidth = width;
         this.parallaxLayers.push(parallax);
-        this.makeSprite(`${name}_A`, layer, frame, width, height, new Vec3(0, 0, 0));
-        this.makeSprite(`${name}_B`, layer, frame, width, height, new Vec3(width, 0, 0));
+        for (let i = -1; i <= 1; i++) {
+            this.makeSprite(`${name}_${i + 2}`, layer, frame, width, height, new Vec3(i * width, 0, 0));
+        }
     }
 
     private resetRunData(): void {
@@ -387,8 +433,11 @@ export class GameManager extends Component {
         this.runCoins = 0;
         this.score = 0;
         this.combo = 0;
+        this.maxCombo = 0;
         this.comboTimer = 0;
         this.dodges = 0;
+        this.shieldBlocks = 0;
+        this.reviveUsed = false;
         this.nextSpawnX = 700;
         this.spaceHeld = false;
         this.touchHeld = false;
@@ -456,22 +505,38 @@ export class GameManager extends Component {
     }
 
     private gameOver(): void {
-        if (this.state !== 'playing') {
+        if (this.state !== 'playing' && this.state !== 'revive') {
             return;
         }
         this.state = 'gameover';
         const finalScore = Math.floor(this.score);
-        const missionDone = this.isMissionDone();
-        const reward = this.runCoins + Math.floor(this.distance / 120) + (missionDone ? 25 : 0);
+        const baseReward = this.runCoins + Math.floor(this.distance / 120);
+        const missions = this.missionViews();
+        const missionReward = missions.reduce((sum, mission) => sum + (mission.completed ? mission.reward : 0), 0);
+        const newAchievements = this.unlockedAchievements(finalScore, this.saveData.totalCoins + baseReward + missionReward);
+        const achievementReward = newAchievements.reduce((sum, achievement) => sum + achievement.reward, 0);
+        const reward = baseReward + missionReward + achievementReward;
         this.saveData.totalCoins += reward;
         if (finalScore > this.saveData.bestScore) {
             this.saveData.bestScore = finalScore;
         }
-        if (missionDone) {
-            this.saveData.missionsCompleted += 1;
+        this.saveData.missionsCompleted += missions.filter((mission) => mission.completed).length;
+        for (const achievement of newAchievements) {
+            this.saveData.achievements[achievement.id] = true;
         }
+        const rank = this.recordLeaderboard(finalScore);
         this.saveGame();
-        this.hud?.setGameOver(finalScore, this.runCoins, this.saveData.totalCoins, this.distance, missionDone, reward);
+        this.hud?.setGameOver({
+            score: finalScore,
+            runCoins: this.runCoins,
+            totalCoins: this.saveData.totalCoins,
+            distance: this.distance,
+            reward,
+            rank,
+            missions,
+            achievements: newAchievements,
+            leaderboard: this.leaderboardView(10),
+        });
         this.feedback?.shake(this.worldRoot, 12);
         this.audioManager?.playSfx('gameover');
         if (this.player) {
@@ -514,7 +579,9 @@ export class GameManager extends Component {
             for (const power of pattern.powers ?? []) {
                 this.spawnPowerup(baseX + power.x, power.kind, power.y);
             }
-            this.nextSpawnX += pattern.length + this.randomRange(this.patternGapMin, this.patternGapMax);
+            const stage = this.currentStage();
+            const stageGapTrim = Math.min(140, stage * 28);
+            this.nextSpawnX += pattern.length + this.randomRange(this.patternGapMin - stageGapTrim, this.patternGapMax - stageGapTrim);
         }
     }
 
@@ -523,12 +590,12 @@ export class GameManager extends Component {
             return;
         }
         const data = {
-            mushroom: { frame: this.textures.mushroom, width: 74, height: 68, y: this.surfaceY + 34, padX: 16, padY: 14, passType: 'jump' as ObstaclePassType },
-            cactus: { frame: this.textures.cactus, width: 66, height: 78, y: this.surfaceY + 39, padX: 14, padY: 12, passType: 'jump' as ObstaclePassType },
+            mushroom: { frame: this.textures.mushroom, width: 92, height: 84, y: this.surfaceY + 42, padX: 20, padY: 18, passType: 'jump' as ObstaclePassType },
+            cactus: { frame: this.textures.cactus, width: 84, height: 100, y: this.surfaceY + 50, padX: 18, padY: 15, passType: 'jump' as ObstaclePassType },
             crate: { frame: this.textures.crate, width: 78, height: 66, y: this.surfaceY + 33, padX: 14, padY: 11, passType: 'jump' as ObstaclePassType },
-            spikes: { frame: this.textures.spikes, width: 82, height: 46, y: this.surfaceY + 23, padX: 13, padY: 8, passType: 'jump' as ObstaclePassType },
-            lowSign: { frame: this.textures.lowSign, width: 126, height: 66, y: this.surfaceY + 118, padX: 17, padY: 13, passType: 'slide' as ObstaclePassType },
-            hangingBell: { frame: this.textures.hangingBell, width: 146, height: 90, y: this.surfaceY + 132, padX: 18, padY: 15, passType: 'slide' as ObstaclePassType },
+            spikes: { frame: this.textures.spikes, width: 112, height: 56, y: this.surfaceY + 28, padX: 18, padY: 11, passType: 'jump' as ObstaclePassType },
+            lowSign: { frame: this.textures.lowSign, width: 136, height: 104, y: this.surfaceY + 132, padX: 24, padY: 20, passType: 'slide' as ObstaclePassType },
+            hangingBell: { frame: this.textures.hangingBell, width: 104, height: 142, y: this.surfaceY + 150, padX: 18, padY: 26, passType: 'slide' as ObstaclePassType },
         }[kind];
         const node = this.makeSprite(`Obstacle_${kind}`, this.obstacleRoot, data.frame, data.width, data.height, new Vec3(x, data.y, 0));
         const obstacle = node.addComponent(Obstacle);
@@ -698,6 +765,7 @@ export class GameManager extends Component {
                 const value = collectible.collect();
                 this.runCoins += value;
                 this.combo += value;
+                this.recordCombo();
                 this.comboTimer = 2.2;
                 this.score += (100 + Math.min(300, this.combo * 8)) * value * this.currentMultiplier();
                 this.audioManager?.playSfx('coin');
@@ -719,6 +787,7 @@ export class GameManager extends Component {
             if (!obstacle.passed && obstacle.node.position.x < this.playerX - 84) {
                 obstacle.passed = true;
                 this.combo += 2;
+                this.recordCombo();
                 this.comboTimer = 2.2;
                 this.dodges += 1;
                 this.score += 80 * this.currentMultiplier();
@@ -739,15 +808,53 @@ export class GameManager extends Component {
             }
             if (this.powers.shield > 0) {
                 this.powers.shield = 0;
+                this.shieldBlocks += 1;
                 obstacle.node.active = false;
                 this.flashPlayer();
                 this.feedback?.shake(this.worldRoot, 8);
                 this.feedback?.showText('\u62a4\u76fe\u62b5\u6321', obstacle.node.position.clone().add(new Vec3(0, 60, 0)), new Color(74, 145, 226, 255), 26);
                 continue;
             }
+            this.offerRevive();
+            return;
+        }
+    }
+
+    private offerRevive(): void {
+        if (this.reviveUsed) {
             this.gameOver();
             return;
         }
+        this.reviveUsed = true;
+        this.state = 'revive';
+        this.hud?.setRevive();
+        this.feedback?.shake(this.worldRoot, 8);
+        this.feedback?.showText('\u8981\u590d\u6d3b\u5417\uff1f', new Vec3(0, 24, 0), new Color(255, 152, 84, 255), 30);
+    }
+
+    private reviveFromAd(): void {
+        if (this.state !== 'revive') {
+            return;
+        }
+        this.clearDangerAroundPlayer();
+        this.powers.shield = Math.max(this.powers.shield, 3.5);
+        this.comboTimer = 1.4;
+        this.state = 'playing';
+        this.hud?.setPlaying();
+        this.flashPlayer();
+        this.updatePowerEffects(0);
+        this.feedback?.showText('\u590d\u6d3b\u6210\u529f\uff01', new Vec3(this.playerX + 70, this.playerGroundY + 120, 0), new Color(74, 145, 226, 255), 28);
+        this.audioManager?.playSfx('powerup');
+    }
+
+    private clearDangerAroundPlayer(): void {
+        for (const obstacle of this.obstacles) {
+            const x = obstacle.node.position.x;
+            if (x > this.playerX - 120 && x < this.playerX + 420) {
+                obstacle.node.active = false;
+            }
+        }
+        this.obstacles = this.obstacles.filter((item) => item.node.isValid && item.node.active);
     }
 
     private getPlayerHitBox(): Rect {
@@ -816,6 +923,10 @@ export class GameManager extends Component {
         return 1;
     }
 
+    private recordCombo(): void {
+        this.maxCombo = Math.max(this.maxCombo, this.combo);
+    }
+
     private updateHud(): void {
         this.hud?.updateStats({
             distance: this.distance,
@@ -831,8 +942,13 @@ export class GameManager extends Component {
     }
 
     private pickCoursePattern(): CoursePattern {
-        const available = this.coursePatterns.filter((pattern) => this.distance >= (pattern.minDistance ?? 0));
+        const stageBonus = this.currentStage() * 180;
+        const available = this.coursePatterns.filter((pattern) => this.distance + stageBonus >= (pattern.minDistance ?? 0));
         return available[Math.floor(Math.random() * available.length)] ?? this.coursePatterns[0];
+    }
+
+    private currentStage(): number {
+        return Math.min(5, Math.floor(this.distance / 900));
     }
 
     private randomRange(min: number, max: number): number {
@@ -934,6 +1050,10 @@ export class GameManager extends Component {
     private onStartPressed(): void { this.startRun(); }
     private onSettingsPressed(): void { this.showSettings(); }
     private onUpgradePressed(): void { this.showUpgrade(); }
+    private onLeaderboardPressed(): void { this.hud?.setLeaderboard(this.leaderboardView(10)); }
+    private onLeaderboardBackPressed(): void { this.hud?.closeLeaderboard(); }
+    private onReviveAdPressed(): void { this.reviveFromAd(); }
+    private onReviveGiveUpPressed(): void { this.gameOver(); }
     private onPausePressed(): void { this.pauseRun(); }
     private onContinuePressed(): void { this.resumeRun(); }
     private onMenuPressed(): void { this.showMenu(); }
@@ -1058,15 +1178,72 @@ export class GameManager extends Component {
         }));
     }
 
-    private isMissionDone(): boolean {
-        return this.runCoins >= this.missionCoins || this.distance >= this.missionDistance || this.dodges >= this.missionDodges;
+    private missionText(): string {
+        return this.missionViews().map((mission) => {
+            const current = Math.min(mission.current, mission.target);
+            const mark = mission.completed ? '\u2713' : `${current}/${mission.target}`;
+            return `${mission.label} ${mark}`;
+        }).join('   ');
     }
 
-    private missionText(): string {
-        if (this.isMissionDone()) {
-            return '\u4efb\u52a1\u5b8c\u6210: \u7ed3\u7b97 +25 \u91d1\u5e01';
+    private missionViews(): MissionView[] {
+        return MISSION_DEFS.map((mission) => {
+            const current = this.missionCurrent(mission.id);
+            return {
+                label: mission.label,
+                current,
+                target: mission.target,
+                reward: mission.reward,
+                completed: current >= mission.target,
+            };
+        });
+    }
+
+    private missionCurrent(id: MissionId): number {
+        if (id === 'coins') return this.runCoins;
+        if (id === 'distance') return Math.floor(this.distance);
+        return this.dodges;
+    }
+
+    private unlockedAchievements(finalScore: number, projectedCoins: number): Array<AchievementView & { id: AchievementId }> {
+        const unlocked: Array<AchievementView & { id: AchievementId }> = [];
+        for (const achievement of ACHIEVEMENT_DEFS) {
+            if (this.saveData.achievements[achievement.id] || !this.isAchievementDone(achievement.id, finalScore, projectedCoins)) {
+                continue;
+            }
+            unlocked.push({ id: achievement.id, label: achievement.label, reward: achievement.reward });
         }
-        return `\u4efb\u52a1: ${this.runCoins}/${this.missionCoins}\u91d1\u5e01  ${Math.floor(this.distance)}/${this.missionDistance}m  ${this.dodges}/${this.missionDodges}\u8d8a\u8fc7`;
+        return unlocked;
+    }
+
+    private isAchievementDone(id: AchievementId, finalScore: number, projectedCoins: number): boolean {
+        if (id === 'first1k') return this.distance >= 1000;
+        if (id === 'coinCollector') return projectedCoins >= 500;
+        if (id === 'combo20') return this.maxCombo >= 20 || finalScore >= 5000;
+        return this.shieldBlocks >= 3;
+    }
+
+    private recordLeaderboard(score: number): number {
+        const entry: LeaderboardEntry = {
+            score,
+            distance: Math.floor(this.distance),
+            coins: this.runCoins,
+            date: new Date().toISOString(),
+        };
+        this.saveData.leaderboard = [...this.saveData.leaderboard, entry]
+            .sort((a, b) => b.score - a.score || b.distance - a.distance || b.coins - a.coins)
+            .slice(0, 10);
+        const index = this.saveData.leaderboard.indexOf(entry);
+        return index >= 0 ? index + 1 : this.saveData.leaderboard.length;
+    }
+
+    private leaderboardView(limit = 10): LeaderboardEntryView[] {
+        return this.saveData.leaderboard.slice(0, limit).map((entry, index) => ({
+            rank: index + 1,
+            score: entry.score,
+            distance: entry.distance,
+            coins: entry.coins,
+        }));
     }
 
     private loadSave(): GameSave {
@@ -1099,11 +1276,36 @@ export class GameManager extends Component {
                 dash: this.saneLevel(parsed?.upgrades?.dash),
             },
             missionsCompleted: Math.max(0, Math.floor(Number(parsed?.missionsCompleted ?? 0))),
+            leaderboard: this.saneLeaderboard(parsed?.leaderboard),
+            achievements: this.saneAchievements(parsed?.achievements),
         };
     }
 
     private saneLevel(value: unknown): number {
         return Math.max(1, Math.min(MAX_UPGRADE_LEVEL, Math.floor(Number(value ?? 1))));
+    }
+
+    private saneLeaderboard(value: unknown): LeaderboardEntry[] {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+        return value.map((entry) => ({
+            score: Math.max(0, Math.floor(Number(entry?.score ?? 0))),
+            distance: Math.max(0, Math.floor(Number(entry?.distance ?? 0))),
+            coins: Math.max(0, Math.floor(Number(entry?.coins ?? 0))),
+            date: typeof entry?.date === 'string' ? entry.date : '',
+        })).filter((entry) => entry.score > 0)
+            .sort((a, b) => b.score - a.score || b.distance - a.distance || b.coins - a.coins)
+            .slice(0, 10);
+    }
+
+    private saneAchievements(value: unknown): Partial<Record<AchievementId, boolean>> {
+        const source = typeof value === 'object' && value !== null ? value as Partial<Record<AchievementId, boolean>> : {};
+        const achievements: Partial<Record<AchievementId, boolean>> = {};
+        for (const achievement of ACHIEVEMENT_DEFS) {
+            achievements[achievement.id] = source[achievement.id] === true;
+        }
+        return achievements;
     }
 
     private saveGame(): void {

@@ -22,6 +22,45 @@ export type HudStats = {
     missionText: string;
 };
 
+export type LeaderboardEntryView = {
+    rank: number;
+    score: number;
+    distance: number;
+    coins: number;
+};
+
+export type MissionView = {
+    label: string;
+    current: number;
+    target: number;
+    reward: number;
+    completed: boolean;
+};
+
+export type AchievementView = {
+    label: string;
+    reward: number;
+};
+
+export type GameOverView = {
+    score: number;
+    runCoins: number;
+    totalCoins: number;
+    distance: number;
+    reward: number;
+    rank: number;
+    missions: MissionView[];
+    achievements: AchievementView[];
+    leaderboard: LeaderboardEntryView[];
+};
+
+type LeaderboardRowLabels = {
+    rank: Label;
+    score: Label;
+    distance: Label;
+    coins: Label;
+};
+
 export type HudSaveView = {
     totalCoins: number;
     selectedSkin: string;
@@ -52,6 +91,9 @@ const TXT = {
     start: '\u5f00\u59cb\u5192\u9669',
     shop: '\u5546\u5e97',
     settings: '\u8bbe\u7f6e',
+    rank: '\u6392\u884c',
+    revive: '\u770b\u5e7f\u544a\u590d\u6d3b',
+    giveUp: '\u7ed3\u675f',
     pause: '\u6682\u505c',
     resume: '\u7ee7\u7eed',
     menu: '\u4e3b\u83dc\u5355',
@@ -61,6 +103,9 @@ const TXT = {
     settingsTitle: '\u8bbe\u7f6e',
     settingsText: '\u70b9\u51fb / \u7a7a\u683c: \u8df3\u8dc3\n\u957f\u6309\u7a7a\u683c: \u6ed1\u7fd4\n\u65b9\u5411\u4e0b / S: \u4e0b\u6ed1',
     shopTitle: '\u54c8\u57fa\u7c73\u5546\u5e97',
+    rankTitle: '\u5192\u9669\u6392\u884c\u699c',
+    reviveTitle: '\u5dee\u4e00\u70b9\u5c31\u8fc7\u53bb\u5566',
+    reviveText: '\u770b\u5b8c\u5e7f\u544a\u53ef\u4ee5\u539f\u5730\u590d\u6d3b\uff0c\u5e76\u83b7\u5f97\u77ed\u6682\u62a4\u76fe',
 };
 
 const POWER_NAMES: Record<keyof PowerState, string> = {
@@ -79,6 +124,7 @@ export class GameHud extends Component {
     private startNode: Node | null = null;
     private settingsNode: Node | null = null;
     private upgradeNode: Node | null = null;
+    private leaderboardNode: Node | null = null;
     private pauseNode: Node | null = null;
     private continueNode: Node | null = null;
     private menuNode: Node | null = null;
@@ -87,10 +133,17 @@ export class GameHud extends Component {
     private retryNode: Node | null = null;
     private resultMenuNode: Node | null = null;
     private resultShopNode: Node | null = null;
+    private resultLeaderboardNode: Node | null = null;
+    private leaderboardBackNode: Node | null = null;
+    private reviveAdNode: Node | null = null;
+    private reviveGiveUpNode: Node | null = null;
     private settingsPanel: Node | null = null;
     private upgradePanel: Node | null = null;
     private pausePanel: Node | null = null;
     private resultPanel: Node | null = null;
+    private revivePanel: Node | null = null;
+    private leaderboardShade: Node | null = null;
+    private leaderboardPanel: Node | null = null;
     private diamondLabel: Label | null = null;
     private totalCoinLabel: Label | null = null;
     private scoreLabel: Label | null = null;
@@ -99,11 +152,15 @@ export class GameHud extends Component {
     private distanceLabel: Label | null = null;
     private multiplierLabel: Label | null = null;
     private comboLabel: Label | null = null;
+    private missionLabel: Label | null = null;
     private resultTitleLabel: Label | null = null;
     private resultScoreLabel: Label | null = null;
     private resultDistanceLabel: Label | null = null;
     private resultCoinLabel: Label | null = null;
     private resultRewardLabel: Label | null = null;
+    private resultMissionLabel: Label | null = null;
+    private resultAchievementLabel: Label | null = null;
+    private leaderboardRows: LeaderboardRowLabels[] = [];
     private upgradeCoinLabel: Label | null = null;
     private upgradeButtons: Partial<Record<keyof PowerState, Node>> = {};
     private upgradeLabels: Partial<Record<keyof PowerState, Label>> = {};
@@ -120,8 +177,10 @@ export class GameHud extends Component {
         this.buildGameHud(icons);
         this.buildSettings(buttonFrame, panelFrame);
         this.buildPause(buttonFrame, panelFrame);
+        this.buildRevive(buttonFrame, panelFrame);
         this.buildUpgrade(buttonFrame, panelFrame, icons);
         this.buildResult(buttonFrame, panelFrame);
+        this.buildLeaderboard(buttonFrame, panelFrame);
         this.setMenu({ totalCoins: 0, selectedSkin: 'classic', upgrades: { magnet: 1, shield: 1, score: 1, dash: 1 } }, []);
     }
 
@@ -153,14 +212,42 @@ export class GameHud extends Component {
         this.showOnly('pause');
     }
 
-    public setGameOver(score: number, runCoins: number, totalCoins: number, distance: number, missionDone: boolean, reward: number): void {
+    public setRevive(): void {
+        this.showOnly('revive');
+    }
+
+    public setGameOver(result: GameOverView): void {
         this.showOnly('result');
-        if (this.resultTitleLabel) this.resultTitleLabel.string = missionDone ? '\u5192\u9669\u7ed3\u675f  \u4efb\u52a1\u5b8c\u6210' : TXT.over;
-        if (this.resultScoreLabel) this.resultScoreLabel.string = `\u5206\u6570 ${score}`;
-        if (this.resultDistanceLabel) this.resultDistanceLabel.string = `\u91cc\u7a0b ${Math.floor(distance)}m`;
-        if (this.resultCoinLabel) this.resultCoinLabel.string = `\u91d1\u5e01 ${runCoins}`;
-        if (this.resultRewardLabel) this.resultRewardLabel.string = `\u5956\u52b1 +${reward}    \u603b\u91d1\u5e01 ${totalCoins}`;
-        if (this.totalCoinLabel) this.totalCoinLabel.string = String(totalCoins);
+        const missionDone = result.missions.some((mission) => mission.completed);
+        if (this.resultTitleLabel) this.resultTitleLabel.string = missionDone ? '\u5192\u9669\u7ed3\u675f  \u4efb\u52a1\u8fbe\u6210' : TXT.over;
+        if (this.resultScoreLabel) this.resultScoreLabel.string = `\u5206\u6570 ${result.score}`;
+        if (this.resultDistanceLabel) this.resultDistanceLabel.string = `\u91cc\u7a0b ${Math.floor(result.distance)}m`;
+        if (this.resultCoinLabel) this.resultCoinLabel.string = `\u91d1\u5e01 ${result.runCoins}`;
+        if (this.resultRewardLabel) this.resultRewardLabel.string = `\u603b\u5956\u52b1 +${result.reward}    \u6392\u540d #${result.rank}`;
+        if (this.resultMissionLabel) this.resultMissionLabel.string = result.missions.map((mission) => `${mission.completed ? '\u2713' : '-'} ${mission.label} +${mission.completed ? mission.reward : 0}`).join('   ');
+        if (this.resultAchievementLabel) this.resultAchievementLabel.string = result.achievements.length > 0
+            ? result.achievements.map((achievement) => `\u65b0\u6210\u5c31: ${achievement.label} +${achievement.reward}`).join('   ')
+            : '\u6210\u5c31: \u7ee7\u7eed\u5192\u9669\u5373\u53ef\u89e3\u9501';
+        if (this.totalCoinLabel) this.totalCoinLabel.string = String(result.totalCoins);
+    }
+
+    public setLeaderboard(entries: LeaderboardEntryView[]): void {
+        this.setNodeVisible(this.overlayRoot, true);
+        this.setNodeVisible(this.leaderboardShade, true);
+        this.setNodeVisible(this.leaderboardPanel, true);
+        for (let i = 0; i < this.leaderboardRows.length; i++) {
+            const entry = entries[i];
+            const row = this.leaderboardRows[i];
+            row.rank.string = `#${entry?.rank ?? i + 1}`;
+            row.score.string = entry ? `${entry.score}\u5206` : '--';
+            row.distance.string = entry ? `${Math.floor(entry.distance)}m` : '--';
+            row.coins.string = entry ? `${entry.coins}\u91d1\u5e01` : '--';
+        }
+    }
+
+    public closeLeaderboard(): void {
+        this.setNodeVisible(this.leaderboardShade, false);
+        this.setNodeVisible(this.leaderboardPanel, false);
     }
 
     public updateStats(stats: HudStats): void {
@@ -171,6 +258,7 @@ export class GameHud extends Component {
         if (this.distanceLabel) this.distanceLabel.string = `${Math.floor(stats.distance)}m`;
         if (this.multiplierLabel) this.multiplierLabel.string = `x${stats.multiplier.toFixed(2)}`;
         if (this.comboLabel) this.comboLabel.string = stats.combo > 0 ? `\u8fde\u51fb ${stats.combo}` : '';
+        if (this.missionLabel) this.missionLabel.string = stats.missionText;
     }
 
     public updatePowers(_powers: PowerState, _maxPowers: PowerState): void {
@@ -179,6 +267,7 @@ export class GameHud extends Component {
     public getStartNode(): Node | null { return this.startNode; }
     public getSettingsNode(): Node | null { return this.settingsNode; }
     public getUpgradeNode(): Node | null { return this.upgradeNode; }
+    public getLeaderboardNode(): Node | null { return this.leaderboardNode; }
     public getPauseNode(): Node | null { return this.pauseNode; }
     public getContinueNode(): Node | null { return this.continueNode; }
     public getMenuNode(): Node | null { return this.menuNode; }
@@ -187,6 +276,10 @@ export class GameHud extends Component {
     public getRetryNode(): Node | null { return this.retryNode; }
     public getResultMenuNode(): Node | null { return this.resultMenuNode; }
     public getResultShopNode(): Node | null { return this.resultShopNode; }
+    public getResultLeaderboardNode(): Node | null { return this.resultLeaderboardNode; }
+    public getLeaderboardBackNode(): Node | null { return this.leaderboardBackNode; }
+    public getReviveAdNode(): Node | null { return this.reviveAdNode; }
+    public getReviveGiveUpNode(): Node | null { return this.reviveGiveUpNode; }
     public getUpgradeButton(kind: keyof PowerState): Node | null { return this.upgradeButtons[kind] ?? null; }
     public getSkinButton(id: string): Node | null { return this.skinButtons[id] ?? null; }
 
@@ -201,9 +294,10 @@ export class GameHud extends Component {
     private buildMenu(buttonFrame: SpriteFrame | null, logoFrame: SpriteFrame | null): void {
         if (!this.menuRoot) return;
         this.makeImage('MainLogo', logoFrame, new Vec3(0, 140, 0), 430, 238, this.menuRoot);
-        this.startNode = this.makeButton('StartButton', buttonFrame, new Vec3(-286, -214, 0), TXT.start, this.menuRoot, 176, 54, 22).node;
-        this.upgradeNode = this.makeButton('ShopButton', buttonFrame, new Vec3(0, -214, 0), TXT.shop, this.menuRoot, 176, 54, 22).node;
-        this.settingsNode = this.makeButton('SettingsButton', buttonFrame, new Vec3(286, -214, 0), TXT.settings, this.menuRoot, 176, 54, 22).node;
+        this.startNode = this.makeButton('StartButton', buttonFrame, new Vec3(-360, -214, 0), TXT.start, this.menuRoot, 160, 54, 21).node;
+        this.upgradeNode = this.makeButton('ShopButton', buttonFrame, new Vec3(-120, -214, 0), TXT.shop, this.menuRoot, 160, 54, 21).node;
+        this.leaderboardNode = this.makeButton('LeaderboardButton', buttonFrame, new Vec3(120, -214, 0), TXT.rank, this.menuRoot, 160, 54, 21).node;
+        this.settingsNode = this.makeButton('SettingsButton', buttonFrame, new Vec3(360, -214, 0), TXT.settings, this.menuRoot, 160, 54, 21).node;
     }
 
     private buildGameHud(icons: HudIconFrames): void {
@@ -214,6 +308,7 @@ export class GameHud extends Component {
         this.scoreLabel.isBold = true;
         this.pauseNode = this.makeImage('PauseButton', icons.pause, new Vec3(596, 320, 0), 34, 34, this.gameHudRoot);
         this.comboLabel = this.makeLabel('ComboLabel', '', 23, new Vec3(0, 226, 0), new Color(255, 152, 84, 255), 260, this.gameHudRoot);
+        this.missionLabel = this.makeLabel('MissionLabel', '', 18, new Vec3(0, 316, 0), new Color(94, 110, 132, 230), 540, this.gameHudRoot);
     }
 
     private buildSettings(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null): void {
@@ -230,6 +325,15 @@ export class GameHud extends Component {
         this.makeLabel('PauseTitle', '\u6682\u505c\u4e2d', 38, new Vec3(0, 84, 0), new Color(92, 65, 62, 255), 450, this.pausePanel);
         this.continueNode = this.makeButton('ContinueButton', buttonFrame, new Vec3(-140, -74, 0), TXT.resume, this.pausePanel, 176, 54, 22).node;
         this.menuNode = this.makeButton('PauseMenuButton', buttonFrame, new Vec3(140, -74, 0), TXT.menu, this.pausePanel, 176, 54, 22).node;
+    }
+
+    private buildRevive(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null): void {
+        if (!this.overlayRoot) return;
+        this.revivePanel = this.makePanel('RevivePanel', panelFrame, new Vec3(0, 38, 0), 680, 300, this.overlayRoot);
+        this.makeLabel('ReviveTitle', TXT.reviveTitle, 34, new Vec3(0, 92, 0), new Color(92, 65, 62, 255), 520, this.revivePanel);
+        this.makeLabel('ReviveText', TXT.reviveText, 22, new Vec3(0, 30, 0), new Color(88, 95, 101, 255), 560, this.revivePanel);
+        this.reviveAdNode = this.makeButton('ReviveAdButton', buttonFrame, new Vec3(-150, -82, 0), TXT.revive, this.revivePanel, 220, 58, 20).node;
+        this.reviveGiveUpNode = this.makeButton('ReviveGiveUpButton', buttonFrame, new Vec3(150, -82, 0), TXT.giveUp, this.revivePanel, 180, 58, 22).node;
     }
 
     private buildUpgrade(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null, icons: HudIconFrames): void {
@@ -266,26 +370,92 @@ export class GameHud extends Component {
 
     private buildResult(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null): void {
         if (!this.overlayRoot) return;
-        this.resultPanel = this.makePanel('ResultPanel', panelFrame, new Vec3(0, 42, 0), 820, 360, this.overlayRoot);
-        this.resultTitleLabel = this.makeLabel('ResultTitle', TXT.over, 34, new Vec3(0, 126, 0), new Color(92, 65, 62, 255), 600, this.resultPanel);
-        this.resultScoreLabel = this.makeLabel('ResultScore', '', 24, new Vec3(-190, 54, 0), new Color(82, 71, 72, 255), 230, this.resultPanel);
-        this.resultDistanceLabel = this.makeLabel('ResultDistance', '', 24, new Vec3(190, 54, 0), new Color(48, 139, 139, 255), 230, this.resultPanel);
-        this.resultCoinLabel = this.makeLabel('ResultCoin', '', 24, new Vec3(-190, 8, 0), new Color(157, 97, 24, 255), 230, this.resultPanel);
-        this.resultRewardLabel = this.makeLabel('ResultReward', '', 23, new Vec3(190, 8, 0), new Color(98, 87, 133, 255), 310, this.resultPanel);
-        this.retryNode = this.makeButton('RetryButton', buttonFrame, new Vec3(-246, -116, 0), TXT.retry, this.resultPanel, 176, 54, 20).node;
-        this.resultShopNode = this.makeButton('ResultShopButton', buttonFrame, new Vec3(0, -116, 0), TXT.shop, this.resultPanel, 176, 54, 20).node;
-        this.resultMenuNode = this.makeButton('ResultMenuButton', buttonFrame, new Vec3(246, -116, 0), TXT.menu, this.resultPanel, 176, 54, 20).node;
+        this.resultPanel = this.makePanel('ResultPanel', panelFrame, new Vec3(0, 42, 0), 920, 468, this.overlayRoot);
+        this.resultTitleLabel = this.makeLabel('ResultTitle', TXT.over, 32, new Vec3(0, 178, 0), new Color(92, 65, 62, 255), 650, this.resultPanel);
+        this.resultScoreLabel = this.makeLabel('ResultScore', '', 23, new Vec3(-220, 112, 0), new Color(82, 71, 72, 255), 250, this.resultPanel);
+        this.resultDistanceLabel = this.makeLabel('ResultDistance', '', 23, new Vec3(220, 112, 0), new Color(48, 139, 139, 255), 250, this.resultPanel);
+        this.resultCoinLabel = this.makeLabel('ResultCoin', '', 22, new Vec3(-220, 70, 0), new Color(157, 97, 24, 255), 250, this.resultPanel);
+        this.resultRewardLabel = this.makeLabel('ResultReward', '', 22, new Vec3(220, 70, 0), new Color(98, 87, 133, 255), 340, this.resultPanel);
+        this.resultMissionLabel = this.makeLabel('ResultMission', '', 18, new Vec3(0, 20, 0), new Color(88, 95, 101, 255), 800, this.resultPanel);
+        this.resultAchievementLabel = this.makeLabel('ResultAchievement', '', 18, new Vec3(0, -24, 0), new Color(190, 115, 54, 255), 800, this.resultPanel);
+        this.retryNode = this.makeButton('RetryButton', buttonFrame, new Vec3(-330, -174, 0), TXT.retry, this.resultPanel, 154, 54, 19).node;
+        this.resultShopNode = this.makeButton('ResultShopButton', buttonFrame, new Vec3(-110, -174, 0), TXT.shop, this.resultPanel, 154, 54, 19).node;
+        this.resultLeaderboardNode = this.makeButton('ResultLeaderboardButton', buttonFrame, new Vec3(110, -174, 0), TXT.rank, this.resultPanel, 154, 54, 19).node;
+        this.resultMenuNode = this.makeButton('ResultMenuButton', buttonFrame, new Vec3(330, -174, 0), TXT.menu, this.resultPanel, 154, 54, 19).node;
     }
 
-    private showOnly(mode: 'menu' | 'game' | 'settings' | 'upgrade' | 'pause' | 'result'): void {
+    private buildLeaderboard(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null): void {
+        if (!this.overlayRoot) return;
+        this.leaderboardShade = this.makeNode('LeaderboardShade', this.overlayRoot, Vec3.ZERO);
+        const shadeTransform = this.leaderboardShade.addComponent(UITransform);
+        shadeTransform.setContentSize(1280, 720);
+        const shade = this.leaderboardShade.addComponent(Graphics);
+        shade.fillColor = new Color(41, 46, 58, 94);
+        shade.rect(-640, -360, 1280, 720);
+        shade.fill();
+        this.leaderboardPanel = this.makePanel('LeaderboardPanel', panelFrame, new Vec3(0, 34, 0), 720, 492, this.overlayRoot);
+        this.makeLabel('LeaderboardTitle', TXT.rankTitle, 34, new Vec3(0, 196, 0), new Color(92, 65, 62, 255), 520, this.leaderboardPanel);
+        this.makeLeaderboardHeader();
+        this.leaderboardRows = [];
+        for (let i = 0; i < 10; i++) {
+            const y = 106 - i * 30;
+            const color = i < 3 ? new Color(190, 115, 54, 255) : new Color(74, 112, 143, 255);
+            this.makeLeaderboardRowBg(`LeaderboardRowBg_${i}`, y, i % 2 === 0);
+            this.leaderboardRows.push({
+                rank: this.makeLabel(`LeaderboardRank_${i}`, `#${i + 1}`, 18, new Vec3(-230, y, 0), color, 84, this.leaderboardPanel),
+                score: this.makeLabel(`LeaderboardScore_${i}`, '--', 18, new Vec3(-78, y, 0), color, 144, this.leaderboardPanel),
+                distance: this.makeLabel(`LeaderboardDistance_${i}`, '--', 18, new Vec3(78, y, 0), color, 120, this.leaderboardPanel),
+                coins: this.makeLabel(`LeaderboardCoins_${i}`, '--', 18, new Vec3(224, y, 0), color, 138, this.leaderboardPanel),
+            });
+        }
+        this.leaderboardBackNode = this.makeButton('LeaderboardBackButton', buttonFrame, new Vec3(0, -196, 0), TXT.back, this.leaderboardPanel, 190, 54, 21).node;
+    }
+
+    private makeLeaderboardHeader(): void {
+        if (!this.leaderboardPanel) return;
+        const y = 146;
+        this.makeLabel('LeaderboardHeaderRank', '\u540d\u6b21', 19, new Vec3(-230, y, 0), new Color(137, 92, 52, 255), 84, this.leaderboardPanel);
+        this.makeLabel('LeaderboardHeaderScore', '\u5206\u6570', 19, new Vec3(-78, y, 0), new Color(137, 92, 52, 255), 144, this.leaderboardPanel);
+        this.makeLabel('LeaderboardHeaderDistance', '\u91cc\u7a0b', 19, new Vec3(78, y, 0), new Color(137, 92, 52, 255), 120, this.leaderboardPanel);
+        this.makeLabel('LeaderboardHeaderCoins', '\u91d1\u5e01', 19, new Vec3(224, y, 0), new Color(137, 92, 52, 255), 138, this.leaderboardPanel);
+        this.makeLeaderboardLine('LeaderboardHeaderLine', 126, 2, new Color(209, 138, 70, 160));
+    }
+
+    private makeLeaderboardRowBg(name: string, y: number, tinted: boolean): void {
+        if (!this.leaderboardPanel) return;
+        const node = this.makeNode(name, this.leaderboardPanel, new Vec3(0, y, 0));
+        const transform = node.addComponent(UITransform);
+        transform.setContentSize(570, 28);
+        const bg = node.addComponent(Graphics);
+        bg.fillColor = tinted ? new Color(255, 238, 190, 70) : new Color(255, 255, 255, 30);
+        bg.roundRect(-285, -14, 570, 28, 8);
+        bg.fill();
+        this.makeLeaderboardLine(`${name}_Line`, y - 15, 1, new Color(216, 156, 92, 80));
+    }
+
+    private makeLeaderboardLine(name: string, y: number, height: number, color: Color): void {
+        if (!this.leaderboardPanel) return;
+        const node = this.makeNode(name, this.leaderboardPanel, new Vec3(0, y, 0));
+        const transform = node.addComponent(UITransform);
+        transform.setContentSize(570, height);
+        const line = node.addComponent(Graphics);
+        line.fillColor = color;
+        line.rect(-285, -height * 0.5, 570, height);
+        line.fill();
+    }
+
+    private showOnly(mode: 'menu' | 'game' | 'settings' | 'upgrade' | 'pause' | 'revive' | 'result'): void {
         this.setNodeVisible(this.menuRoot, mode === 'menu');
-        this.setNodeVisible(this.gameHudRoot, mode === 'game' || mode === 'pause');
+        this.setNodeVisible(this.gameHudRoot, mode === 'game' || mode === 'pause' || mode === 'revive');
         this.setNodeVisible(this.currencyRoot, mode === 'menu' || mode === 'upgrade' || mode === 'settings' || mode === 'result');
-        this.setNodeVisible(this.overlayRoot, mode === 'settings' || mode === 'upgrade' || mode === 'pause' || mode === 'result');
+        this.setNodeVisible(this.overlayRoot, mode === 'settings' || mode === 'upgrade' || mode === 'pause' || mode === 'revive' || mode === 'result');
         this.setNodeVisible(this.settingsPanel, mode === 'settings');
         this.setNodeVisible(this.upgradePanel, mode === 'upgrade');
         this.setNodeVisible(this.pausePanel, mode === 'pause');
+        this.setNodeVisible(this.revivePanel, mode === 'revive');
         this.setNodeVisible(this.resultPanel, mode === 'result');
+        this.setNodeVisible(this.leaderboardShade, false);
+        this.setNodeVisible(this.leaderboardPanel, false);
     }
 
     private updateSaveView(save: HudSaveView, skins: SkinView[]): void {
