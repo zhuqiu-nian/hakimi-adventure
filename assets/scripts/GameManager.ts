@@ -4,6 +4,8 @@ import {
     Color,
     Component,
     EventKeyboard,
+    Font,
+    Graphics,
     Input,
     input,
     KeyCode,
@@ -36,6 +38,18 @@ type SkinId = 'classic' | 'berry' | 'mint';
 type CoinPatternKind = 'cat' | 'bigCat' | 'dog' | 'fish' | 'paw' | 'heart' | 'star' | 'crown' | 'smile' | 'house';
 type MissionId = 'coins' | 'distance' | 'dodges';
 type AchievementId = 'first1k' | 'coinCollector' | 'combo20' | 'shieldGuard';
+
+type MissileThreat = {
+    warningNode: Node;
+    missileNode: Node | null;
+    trailNode: Node | null;
+    y: number;
+    state: 'warning' | 'flying';
+    timer: number;
+    warningDuration: number;
+    speed: number;
+    hit: boolean;
+};
 
 type CoursePattern = {
     length: number;
@@ -70,6 +84,8 @@ type TextureSet = {
     shieldFx: SpriteFrame;
     scoreFx: SpriteFrame;
     dashFx: SpriteFrame;
+    missile: SpriteFrame;
+    missileTrail: SpriteFrame;
     mushroom: SpriteFrame;
     cactus: SpriteFrame;
     crate: SpriteFrame;
@@ -81,6 +97,7 @@ type TextureSet = {
     badge: SpriteFrame;
     logo: SpriteFrame;
     pauseIcon: SpriteFrame;
+    uiFont: Font;
 };
 
 type GameSave = {
@@ -168,6 +185,7 @@ export class GameManager extends Component {
     private worldRoot: Node | null = null;
     private obstacleRoot: Node | null = null;
     private itemRoot: Node | null = null;
+    private missileRoot: Node | null = null;
     private feedbackRoot: Node | null = null;
     private player: Node | null = null;
     private playerFxRoot: Node | null = null;
@@ -180,6 +198,7 @@ export class GameManager extends Component {
     private parallaxLayers: ParallaxLayer[] = [];
     private obstacles: Obstacle[] = [];
     private collectibles: Collectible[] = [];
+    private missiles: MissileThreat[] = [];
     private powers: PowerState = { magnet: 0, shield: 0, score: 0, dash: 0 };
     private speed = 0;
     private distance = 0;
@@ -192,6 +211,7 @@ export class GameManager extends Component {
     private shieldBlocks = 0;
     private reviveUsed = false;
     private nextSpawnX = 720;
+    private missileCooldown = 0;
     private spaceHeld = false;
     private touchHeld = false;
     private saveData: GameSave = { ...DEFAULT_SAVE, upgrades: { ...DEFAULT_UPGRADES }, unlockedSkins: ['classic'] };
@@ -205,6 +225,8 @@ export class GameManager extends Component {
     private readonly patternGapMax = 420;
     private readonly samePatternJitter = 80;
     private readonly minObstacleGap = 260;
+    private readonly missileUnlockDistance = 900;
+    private readonly missileBaseCooldown = 7.4;
     private readonly saveKey = 'hakimi_adventure_save_v2';
     private readonly oldBestKey = 'hakimi_adventure_best_score';
     private readonly coursePatterns: CoursePattern[] = [
@@ -275,10 +297,13 @@ export class GameManager extends Component {
         }
         this.groundScroller?.scroll(dt, activeSpeed);
         this.scrollDynamicNodes(dt, activeSpeed);
+        this.updateMissiles(dt);
         this.applyMagnet(dt);
         this.spawnWhileNeeded();
+        this.maybeSpawnMissile(dt);
         this.checkCollectibles();
         this.checkObstacles();
+        this.checkMissiles();
         this.updateHud();
     }
 
@@ -291,20 +316,23 @@ export class GameManager extends Component {
         this.worldRoot = this.makeNode('World', this.node, Vec3.ZERO);
 
         const bgRoot = this.makeNode('Parallax', this.worldRoot, Vec3.ZERO);
-        this.createParallaxLayer(bgRoot, 'SeamlessKawaiiBackground', this.textures.seamlessBg, 0, 1280, 720, 0);
-        this.createDecorLayer(bgRoot);
+        const backgroundVisibleHeight = 598;
+        this.createParallaxLayer(bgRoot, 'SeamlessKawaiiBackground', this.textures.seamlessBg, 0, 1280, backgroundVisibleHeight, this.surfaceY + backgroundVisibleHeight * 0.5);
 
-        const groundLayer = this.makeNode('GroundLayer', this.worldRoot, new Vec3(0, this.surfaceY - 46, 0));
+        const groundWidth = 1280;
+        const groundHeight = 122;
+        const groundLayer = this.makeNode('GroundLayer', this.worldRoot, new Vec3(0, this.surfaceY - groundHeight * 0.5, 0));
         this.groundScroller = groundLayer.addComponent(WorldScroller);
         this.groundScroller.speedMultiplier = 1;
-        this.groundScroller.wrapWidth = 1280;
-        for (let i = 0; i < 9; i++) {
-            this.makeSprite(`Ground_${i}`, groundLayer, this.textures.ground, 365, 92, new Vec3(-730 + i * 365, 0, 0));
+        this.groundScroller.wrapWidth = groundWidth;
+        for (let i = 0; i < 3; i++) {
+            this.makeSprite(`Ground_${i}`, groundLayer, this.textures.ground, groundWidth, groundHeight, new Vec3(i * groundWidth, 0, 0));
         }
 
         this.obstacleRoot = this.makeNode('Obstacles', this.worldRoot, Vec3.ZERO);
         this.itemRoot = this.makeNode('CollectiblesAndPowerups', this.worldRoot, Vec3.ZERO);
-        this.player = this.makeSprite('HakimiRunner', this.worldRoot, this.textures.runner, 188, 188, new Vec3(this.playerX, this.playerGroundY, 0));
+        this.missileRoot = this.makeNode('Missiles', this.worldRoot, Vec3.ZERO);
+        this.player = this.makeSprite('HakimiRunner', this.worldRoot, this.textures.runner, 172, 172, new Vec3(this.playerX, this.playerGroundY, 0));
         this.playerFxRoot = this.makeNode('PlayerFxRoot', this.player, Vec3.ZERO);
         this.buildPlayerEffects();
         const playerSprite = this.player.getComponent(Sprite);
@@ -342,7 +370,7 @@ export class GameManager extends Component {
             badge: this.textures.badge,
             pause: this.textures.pauseIcon,
         };
-        this.hud.build(this.textures.button, this.textures.panel, this.textures.logo, icons);
+        this.hud.build(this.textures.button, this.textures.panel, this.textures.logo, icons, this.textures.uiFont);
         this.feedbackRoot = this.makeNode('FeedbackRoot', uiRoot, Vec3.ZERO);
         this.feedback = this.feedbackRoot.addComponent(FeedbackManager);
         this.feedback.setup(this.textures.coin);
@@ -355,10 +383,10 @@ export class GameManager extends Component {
             return;
         }
         this.powerFxNodes = {
-            magnet: this.makeSprite('MagnetFx', this.playerFxRoot, this.textures.magnetFx, 198, 198, new Vec3(0, 4, 0)),
-            shield: this.makeSprite('ShieldFx', this.playerFxRoot, this.textures.shieldFx, 178, 178, new Vec3(0, 2, 0)),
-            dash: this.makeSprite('DashFx', this.playerFxRoot, this.textures.dashFx, 234, 116, new Vec3(-84, -8, 0)),
-            score: this.makeSprite('ScoreFx', this.playerFxRoot, this.textures.scoreFx, 186, 186, new Vec3(0, 8, 0)),
+            magnet: this.makeSprite('MagnetFx', this.playerFxRoot, this.textures.magnetFx, 218, 218, new Vec3(0, 6, 0)),
+            shield: this.makeSprite('ShieldFx', this.playerFxRoot, this.textures.shieldFx, 202, 202, new Vec3(0, 4, 0)),
+            dash: this.makeSprite('DashFx', this.playerFxRoot, this.textures.dashFx, 252, 112, new Vec3(-92, -8, 0)),
+            score: this.makeSprite('ScoreFx', this.playerFxRoot, this.textures.scoreFx, 206, 206, new Vec3(0, 10, 0)),
         };
         for (const kind of POWER_KINDS) {
             const node = this.powerFxNodes[kind];
@@ -439,14 +467,17 @@ export class GameManager extends Component {
         this.shieldBlocks = 0;
         this.reviveUsed = false;
         this.nextSpawnX = 700;
+        this.missileCooldown = 3.8;
         this.spaceHeld = false;
         this.touchHeld = false;
         this.powers = { magnet: 0, shield: 0, score: 0, dash: 0 };
         this.updatePowerEffects(0);
         this.obstacles.length = 0;
         this.collectibles.length = 0;
+        this.missiles.length = 0;
         this.obstacleRoot?.removeAllChildren();
         this.itemRoot?.removeAllChildren();
+        this.missileRoot?.removeAllChildren();
         this.runner?.reset(this.playerX);
         this.updateHud();
     }
@@ -820,6 +851,174 @@ export class GameManager extends Component {
         }
     }
 
+    private maybeSpawnMissile(dt: number): void {
+        if (!this.textures || !this.missileRoot || this.distance < this.missileUnlockDistance) {
+            return;
+        }
+        if (this.missiles.some((missile) => missile.state === 'warning' || missile.state === 'flying')) {
+            return;
+        }
+        this.missileCooldown -= dt;
+        if (this.missileCooldown > 0) {
+            return;
+        }
+
+        const stage = this.currentStage();
+        const warningDuration = Math.max(0.85, 1.62 - stage * 0.12);
+        const speed = 980 + stage * 96 + this.speed * 0.28;
+        const lanes = [this.playerGroundY + 46, this.playerGroundY + 74, this.playerGroundY + 102];
+        const y = lanes[Math.floor(Math.random() * lanes.length)] ?? lanes[0];
+        this.spawnMissileWarning(y, warningDuration, speed);
+        this.missileCooldown = Math.max(3.7, this.missileBaseCooldown - stage * 0.56 + this.randomRange(-0.65, 1.05));
+    }
+
+    private spawnMissileWarning(y: number, warningDuration: number, speed: number): void {
+        if (!this.missileRoot) {
+            return;
+        }
+        const warningNode = this.makeNode('MissileWarning', this.missileRoot, new Vec3(0, y, 0));
+        const transform = warningNode.addComponent(UITransform);
+        transform.setContentSize(1280, 36);
+        warningNode.addComponent(Graphics);
+        const threat: MissileThreat = {
+            warningNode,
+            missileNode: null,
+            trailNode: null,
+            y,
+            state: 'warning',
+            timer: 0,
+            warningDuration,
+            speed,
+            hit: false,
+        };
+        this.drawMissileWarning(threat, 0);
+        this.missiles.push(threat);
+        this.feedback?.showText('\u5bfc\u5f39\u9884\u8b66\uff01', new Vec3(260, y + 28, 0), new Color(230, 92, 62, 255), 24);
+    }
+
+    private updateMissiles(dt: number): void {
+        if (!this.textures || !this.missileRoot) {
+            return;
+        }
+        for (const missile of this.missiles) {
+            missile.timer += dt;
+            if (missile.state === 'warning') {
+                const progress = Math.min(1, missile.timer / missile.warningDuration);
+                this.drawMissileWarning(missile, progress);
+                if (missile.timer >= missile.warningDuration) {
+                    missile.warningNode.destroy();
+                    const trail = this.makeSprite('MissileTrail', this.missileRoot, this.textures.missileTrail, 168, 82, new Vec3(830, missile.y, 0));
+                    const body = this.makeSprite('Missile', this.missileRoot, this.textures.missile, 162, 82, new Vec3(740, missile.y, 0));
+                    missile.trailNode = trail;
+                    missile.missileNode = body;
+                    missile.state = 'flying';
+                    missile.timer = 0;
+                    this.feedback?.shake(this.worldRoot, 4);
+                }
+                continue;
+            }
+            const node = missile.missileNode;
+            if (!node || !node.isValid || !node.active) {
+                continue;
+            }
+            const pos = node.position.clone();
+            pos.x -= missile.speed * dt;
+            node.setPosition(pos);
+            if (missile.trailNode && missile.trailNode.isValid) {
+                const pulse = 1 + Math.sin(Date.now() * 0.018) * 0.08;
+                missile.trailNode.setPosition(pos.x + 104, missile.y + Math.sin(Date.now() * 0.012) * 2, 0);
+                missile.trailNode.setScale(pulse, pulse, 1);
+            }
+            if (pos.x < -820) {
+                node.destroy();
+                missile.trailNode?.destroy();
+            }
+        }
+        this.missiles = this.missiles.filter((missile) => {
+            if (missile.state === 'warning') {
+                return missile.warningNode.isValid;
+            }
+            return !!missile.missileNode?.isValid && missile.missileNode.position.x > -840 && !missile.hit;
+        });
+    }
+
+    private drawMissileWarning(missile: MissileThreat, progress: number): void {
+        const graphics = missile.warningNode.getComponent(Graphics);
+        if (!graphics) {
+            return;
+        }
+        const pulseFrequency = 5 + progress * 14;
+        const flash = Math.sin(missile.timer * pulseFrequency * Math.PI * 2) > -0.35;
+        const alpha = flash ? 210 + Math.round(progress * 45) : 60 + Math.round(progress * 70);
+        graphics.clear();
+        graphics.lineWidth = 8 + progress * 3;
+        graphics.strokeColor = new Color(238, 84, 60, alpha);
+        for (let x = -610; x < 550; x += 90) {
+            graphics.moveTo(x, 0);
+            graphics.lineTo(x + 52, 0);
+        }
+        graphics.stroke();
+        graphics.lineWidth = 2;
+        graphics.strokeColor = new Color(255, 236, 123, Math.min(255, alpha + 20));
+        for (let x = -610; x < 550; x += 90) {
+            graphics.moveTo(x, -8);
+            graphics.lineTo(x + 52, -8);
+            graphics.moveTo(x, 8);
+            graphics.lineTo(x + 52, 8);
+        }
+        graphics.stroke();
+        graphics.fillColor = new Color(238, 84, 60, alpha);
+        for (let x = 520; x <= 600; x += 40) {
+            graphics.moveTo(x, 0);
+            graphics.lineTo(x - 20, 14);
+            graphics.lineTo(x - 20, -14);
+            graphics.close();
+            graphics.fill();
+        }
+    }
+
+    private checkMissiles(): void {
+        const playerBox = this.getPlayerHitBox();
+        for (const missile of this.missiles) {
+            if (missile.state !== 'flying' || missile.hit || !missile.missileNode?.active) {
+                continue;
+            }
+            if (!playerBox.intersects(this.getMissileHitBox(missile))) {
+                continue;
+            }
+            missile.hit = true;
+            if (this.powers.dash > 0) {
+                this.score += 220 * this.currentMultiplier();
+                missile.missileNode.active = false;
+                missile.trailNode?.destroy();
+                this.feedback?.showText('\u51b2\u6563\u5bfc\u5f39 +220', missile.missileNode.position.clone().add(new Vec3(0, 48, 0)), new Color(113, 142, 236, 255), 24);
+                continue;
+            }
+            if (this.powers.shield > 0) {
+                this.powers.shield = 0;
+                this.shieldBlocks += 1;
+                missile.missileNode.active = false;
+                missile.trailNode?.destroy();
+                this.flashPlayer();
+                this.feedback?.shake(this.worldRoot, 10);
+                this.feedback?.showText('\u62a4\u76fe\u6321\u4e0b\u5bfc\u5f39', missile.missileNode.position.clone().add(new Vec3(0, 52, 0)), new Color(74, 145, 226, 255), 26);
+                continue;
+            }
+            this.feedback?.shake(this.worldRoot, 12);
+            this.offerRevive();
+            return;
+        }
+    }
+
+    private getMissileHitBox(missile: MissileThreat): Rect {
+        const node = missile.missileNode;
+        if (!node) {
+            return new Rect();
+        }
+        const pos = node.worldPosition;
+        return new Rect(pos.x - 58, pos.y - 22, 116, 44);
+    }
+
     private offerRevive(): void {
         if (this.reviveUsed) {
             this.gameOver();
@@ -855,6 +1054,16 @@ export class GameManager extends Component {
             }
         }
         this.obstacles = this.obstacles.filter((item) => item.node.isValid && item.node.active);
+        for (const missile of this.missiles) {
+            const x = missile.missileNode?.position.x ?? 9999;
+            if (missile.state === 'warning' || (x > this.playerX - 180 && x < this.playerX + 520)) {
+                missile.warningNode?.destroy();
+                missile.missileNode?.destroy();
+                missile.trailNode?.destroy();
+                missile.hit = true;
+            }
+        }
+        this.missiles = this.missiles.filter((missile) => !missile.hit && missile.missileNode?.isValid);
     }
 
     private getPlayerHitBox(): Rect {
@@ -901,10 +1110,25 @@ export class GameManager extends Component {
             if (!active) {
                 continue;
             }
-            if (kind === 'magnet' || kind === 'score') {
-                node.angle += (kind === 'magnet' ? 70 : -50) * dt;
+            const time = Date.now() * 0.001;
+            if (kind === 'magnet') {
+                node.angle += 76 * dt;
+                node.setScale(1 + Math.sin(time * 7.4) * 0.055, 1 + Math.cos(time * 6.6) * 0.045, 1);
+                continue;
             }
-            const pulse = 1 + Math.sin(Date.now() * 0.008) * (kind === 'shield' ? 0.045 : 0.07);
+            if (kind === 'score') {
+                node.angle -= 38 * dt;
+                const pulse = 1 + Math.sin(time * 8.5) * 0.06;
+                node.setScale(pulse, pulse, 1);
+                continue;
+            }
+            if (kind === 'dash') {
+                const stretch = 1 + Math.sin(time * 14) * 0.075;
+                node.setPosition(-92 + Math.sin(time * 17) * 4, -8 + Math.cos(time * 12) * 2, 0);
+                node.setScale(stretch, 1 + Math.cos(time * 13) * 0.035, 1);
+                continue;
+            }
+            const pulse = 1 + Math.sin(time * 6.5) * 0.045;
             node.setScale(pulse, pulse, 1);
         }
     }
@@ -1334,6 +1558,8 @@ export class GameManager extends Component {
             shieldFx,
             scoreFx,
             dashFx,
+            missile,
+            missileTrail,
             mushroom,
             cactus,
             crate,
@@ -1345,6 +1571,7 @@ export class GameManager extends Component {
             badge,
             logo,
             pauseIcon,
+            uiFont,
         ] = await Promise.all([
             this.loadSpriteFrame('textures/world/seamless_bg'),
             this.loadSpriteFrame('textures/world/sky'),
@@ -1366,6 +1593,8 @@ export class GameManager extends Component {
             this.loadSpriteFrame('textures/items/shield_fx'),
             this.loadSpriteFrame('textures/items/score_fx'),
             this.loadSpriteFrame('textures/items/dash_fx'),
+            this.loadSpriteFrame('textures/items/missile'),
+            this.loadSpriteFrame('textures/items/missile_trail'),
             this.loadSpriteFrame('textures/items/mushroom'),
             this.loadSpriteFrame('textures/items/cactus'),
             this.loadSpriteFrame('textures/items/crate'),
@@ -1377,6 +1606,7 @@ export class GameManager extends Component {
             this.loadSpriteFrame('textures/ui/badge'),
             this.loadSpriteFrame('textures/ui/main_logo'),
             this.loadSpriteFrame('textures/ui/pause_icon'),
+            this.loadFont('fonts/ZCOOLKuaiLe-Regular'),
         ]);
         const [runnerRun, runnerJump, runnerSlide, runnerGlide] = await Promise.all([
             this.loadSpriteFrames('textures/runner/v2/run', 26),
@@ -1413,6 +1643,8 @@ export class GameManager extends Component {
             shieldFx,
             scoreFx,
             dashFx,
+            missile,
+            missileTrail,
             mushroom,
             cactus,
             crate,
@@ -1424,7 +1656,20 @@ export class GameManager extends Component {
             badge,
             logo,
             pauseIcon,
+            uiFont,
         };
+    }
+
+    private loadFont(path: string): Promise<Font> {
+        return new Promise((resolve, reject) => {
+            resources.load(path, Font, (error, font) => {
+                if (error || !font) {
+                    reject(error ?? new Error(`Missing font: ${path}`));
+                    return;
+                }
+                resolve(font);
+            });
+        });
     }
 
     private loadSpriteFrames(prefix: string, count: number): Promise<SpriteFrame[]> {

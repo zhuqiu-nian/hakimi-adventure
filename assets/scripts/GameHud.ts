@@ -1,4 +1,4 @@
-import { _decorator, Color, Component, Graphics, Label, Node, Sprite, SpriteFrame, UITransform, Vec3 } from 'cc';
+import { _decorator, Color, Component, Font, Graphics, Label, Node, Sprite, SpriteFrame, UITransform, Vec3 } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -150,6 +150,7 @@ export class GameHud extends Component {
     private scoreShadowLabel: Label | null = null;
     private coinLabel: Label | null = null;
     private distanceLabel: Label | null = null;
+    private distanceShadowLabel: Label | null = null;
     private multiplierLabel: Label | null = null;
     private comboLabel: Label | null = null;
     private missionLabel: Label | null = null;
@@ -166,8 +167,10 @@ export class GameHud extends Component {
     private upgradeLabels: Partial<Record<keyof PowerState, Label>> = {};
     private skinButtons: Record<string, Node> = {};
     private skinLabels: Record<string, Label> = {};
+    private uiFont: Font | null = null;
 
-    public build(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null, logoFrame: SpriteFrame | null, icons: HudIconFrames): void {
+    public build(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null, logoFrame: SpriteFrame | null, icons: HudIconFrames, uiFont: Font | null = null): void {
+        this.uiFont = uiFont;
         this.menuRoot = this.makeNode('MenuRoot', this.node, Vec3.ZERO);
         this.gameHudRoot = this.makeNode('GameHudRoot', this.node, Vec3.ZERO);
         this.overlayRoot = this.makeNode('OverlayRoot', this.node, Vec3.ZERO);
@@ -255,7 +258,9 @@ export class GameHud extends Component {
         if (this.scoreLabel) this.scoreLabel.string = scoreText;
         if (this.scoreShadowLabel) this.scoreShadowLabel.string = scoreText;
         if (this.coinLabel) this.coinLabel.string = `\u91d1\u5e01 ${stats.runCoins}`;
-        if (this.distanceLabel) this.distanceLabel.string = `${Math.floor(stats.distance)}m`;
+        const distanceText = `\u91cc\u7a0b ${Math.floor(stats.distance)}m`;
+        if (this.distanceLabel) this.distanceLabel.string = distanceText;
+        if (this.distanceShadowLabel) this.distanceShadowLabel.string = distanceText;
         if (this.multiplierLabel) this.multiplierLabel.string = `x${stats.multiplier.toFixed(2)}`;
         if (this.comboLabel) this.comboLabel.string = stats.combo > 0 ? `\u8fde\u51fb ${stats.combo}` : '';
         if (this.missionLabel) this.missionLabel.string = stats.missionText;
@@ -302,10 +307,18 @@ export class GameHud extends Component {
 
     private buildGameHud(icons: HudIconFrames): void {
         if (!this.gameHudRoot) return;
-        this.scoreShadowLabel = this.makeLabel('ScoreShadowLabel', '\u5206\u6570 0', 34, new Vec3(-515, 312, 0), new Color(117, 65, 45, 220), 260, this.gameHudRoot);
-        this.scoreLabel = this.makeLabel('ScoreLabel', '\u5206\u6570 0', 34, new Vec3(-520, 318, 0), new Color(255, 238, 158, 255), 260, this.gameHudRoot);
+        this.scoreShadowLabel = this.makeLabel('ScoreShadowLabel', '\u5206\u6570 0', 34, new Vec3(-472, 312, 0), new Color(117, 65, 45, 220), 430, this.gameHudRoot);
+        this.scoreLabel = this.makeLabel('ScoreLabel', '\u5206\u6570 0', 34, new Vec3(-476, 318, 0), new Color(255, 238, 158, 255), 430, this.gameHudRoot);
         this.scoreShadowLabel.isBold = true;
         this.scoreLabel.isBold = true;
+        this.scoreShadowLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this.scoreLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this.distanceShadowLabel = this.makeLabel('DistanceShadowLabel', '\u91cc\u7a0b 0m', 22, new Vec3(-472, 282, 0), new Color(90, 58, 48, 210), 360, this.gameHudRoot);
+        this.distanceLabel = this.makeLabel('DistanceLabel', '\u91cc\u7a0b 0m', 22, new Vec3(-476, 286, 0), new Color(149, 229, 238, 255), 360, this.gameHudRoot);
+        this.distanceShadowLabel.isBold = true;
+        this.distanceLabel.isBold = true;
+        this.distanceShadowLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this.distanceLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
         this.pauseNode = this.makeImage('PauseButton', icons.pause, new Vec3(596, 320, 0), 34, 34, this.gameHudRoot);
         this.comboLabel = this.makeLabel('ComboLabel', '', 23, new Vec3(0, 226, 0), new Color(255, 152, 84, 255), 260, this.gameHudRoot);
         this.missionLabel = this.makeLabel('MissionLabel', '', 18, new Vec3(0, 316, 0), new Color(94, 110, 132, 230), 540, this.gameHudRoot);
@@ -515,6 +528,9 @@ export class GameHud extends Component {
         const transform = node.addComponent(UITransform);
         transform.setContentSize(width, fontSize * 2.5);
         const label = node.addComponent(Label);
+        if (this.uiFont) {
+            label.font = this.uiFont;
+        }
         label.string = text;
         label.fontSize = fontSize;
         label.lineHeight = fontSize + 8;
