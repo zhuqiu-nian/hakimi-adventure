@@ -1,0 +1,134 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "78485309-6686-40e5-b4c3-31e7bc681f62",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "78485309-6686-40e5-b4c3-31e7bc681f62@6c48a",
+      "displayName": "jump_land_08",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "clamp-to-edge",
+        "wrapModeT": "clamp-to-edge",
+        "imageUuidOrDatabaseUri": "78485309-6686-40e5-b4c3-31e7bc681f62",
+        "isUuid": true,
+        "visible": false,
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "f9941": {
+      "importer": "sprite-frame",
+      "uuid": "78485309-6686-40e5-b4c3-31e7bc681f62@f9941",
+      "displayName": "jump_land_08",
+      "id": "f9941",
+      "name": "spriteFrame",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": -1,
+        "offsetY": -27,
+        "trimX": 76,
+        "trimY": 120,
+        "width": 166,
+        "height": 134,
+        "rawWidth": 320,
+        "rawHeight": 320,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [
+            -83,
+            -67,
+            0,
+            83,
+            -67,
+            0,
+            -83,
+            67,
+            0,
+            83,
+            67,
+            0
+          ],
+          "indexes": [
+            0,
+            1,
+            2,
+            2,
+            1,
+            3
+          ],
+          "uv": [
+            76,
+            200,
+            242,
+            200,
+            76,
+            66,
+            242,
+            66
+          ],
+          "nuv": [
+            0.2375,
+            0.20625,
+            0.75625,
+            0.20625,
+            0.2375,
+            0.625,
+            0.75625,
+            0.625
+          ],
+          "minPos": [
+            -83,
+            -67,
+            0
+          ],
+          "maxPos": [
+            83,
+            67,
+            0
+          ]
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "78485309-6686-40e5-b4c3-31e7bc681f62@6c48a",
+        "atlasUuid": "",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "sprite-frame",
+    "fixAlphaTransparencyArtifacts": false,
+    "hasAlpha": true,
+    "redirect": "78485309-6686-40e5-b4c3-31e7bc681f62@6c48a"
+  }
+}

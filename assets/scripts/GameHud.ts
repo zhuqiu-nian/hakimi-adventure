@@ -27,6 +27,7 @@ export type LeaderboardEntryView = {
     score: number;
     distance: number;
     coins: number;
+    isCurrent?: boolean;
 };
 
 export type MissionView = {
@@ -55,6 +56,8 @@ export type GameOverView = {
 };
 
 type LeaderboardRowLabels = {
+    bg: Graphics;
+    line: Graphics;
     rank: Label;
     score: Label;
     distance: Label;
@@ -63,6 +66,8 @@ type LeaderboardRowLabels = {
 
 export type HudSaveView = {
     totalCoins: number;
+    bestScore: number;
+    bestScoreToday: number;
     selectedSkin: string;
     upgrades: UpgradeLevels;
 };
@@ -70,10 +75,11 @@ export type HudSaveView = {
 export type SkinView = {
     id: string;
     label: string;
+    shortLabel: string;
     selected: boolean;
     unlocked: boolean;
     cost: number;
-    color: Color;
+    preview: SpriteFrame;
 };
 
 export type HudIconFrames = {
@@ -146,6 +152,8 @@ export class GameHud extends Component {
     private leaderboardPanel: Node | null = null;
     private diamondLabel: Label | null = null;
     private totalCoinLabel: Label | null = null;
+    private menuBestTodayLabel: Label | null = null;
+    private menuBestAllLabel: Label | null = null;
     private scoreLabel: Label | null = null;
     private scoreShadowLabel: Label | null = null;
     private coinLabel: Label | null = null;
@@ -161,12 +169,14 @@ export class GameHud extends Component {
     private resultRewardLabel: Label | null = null;
     private resultMissionLabel: Label | null = null;
     private resultAchievementLabel: Label | null = null;
+    private leaderboardEmptyLabel: Label | null = null;
     private leaderboardRows: LeaderboardRowLabels[] = [];
     private upgradeCoinLabel: Label | null = null;
     private upgradeButtons: Partial<Record<keyof PowerState, Node>> = {};
     private upgradeLabels: Partial<Record<keyof PowerState, Label>> = {};
     private skinButtons: Record<string, Node> = {};
     private skinLabels: Record<string, Label> = {};
+    private skinPreviewSprites: Record<string, Sprite> = {};
     private uiFont: Font | null = null;
 
     public build(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null, logoFrame: SpriteFrame | null, icons: HudIconFrames, uiFont: Font | null = null): void {
@@ -184,7 +194,7 @@ export class GameHud extends Component {
         this.buildUpgrade(buttonFrame, panelFrame, icons);
         this.buildResult(buttonFrame, panelFrame);
         this.buildLeaderboard(buttonFrame, panelFrame);
-        this.setMenu({ totalCoins: 0, selectedSkin: 'classic', upgrades: { magnet: 1, shield: 1, score: 1, dash: 1 } }, []);
+        this.setMenu({ totalCoins: 0, bestScore: 0, bestScoreToday: 0, selectedSkin: 'classic', upgrades: { magnet: 1, shield: 1, score: 1, dash: 1 } }, []);
     }
 
     public setMenu(save: HudSaveView, skins: SkinView[]): void {
@@ -238,13 +248,33 @@ export class GameHud extends Component {
         this.setNodeVisible(this.overlayRoot, true);
         this.setNodeVisible(this.leaderboardShade, true);
         this.setNodeVisible(this.leaderboardPanel, true);
+        const hasEntries = entries.length > 0;
+        this.setNodeVisible(this.leaderboardEmptyLabel?.node, !hasEntries);
         for (let i = 0; i < this.leaderboardRows.length; i++) {
             const entry = entries[i];
             const row = this.leaderboardRows[i];
-            row.rank.string = `#${entry?.rank ?? i + 1}`;
-            row.score.string = entry ? `${entry.score}\u5206` : '--';
-            row.distance.string = entry ? `${Math.floor(entry.distance)}m` : '--';
-            row.coins.string = entry ? `${entry.coins}\u91d1\u5e01` : '--';
+            const visible = entry !== undefined;
+            this.setNodeVisible(row.bg.node, visible);
+            this.setNodeVisible(row.line.node, visible);
+            this.setNodeVisible(row.rank.node, visible);
+            this.setNodeVisible(row.score.node, visible);
+            this.setNodeVisible(row.distance.node, visible);
+            this.setNodeVisible(row.coins.node, visible);
+            if (!entry) {
+                continue;
+            }
+            const isCurrent = entry.isCurrent === true;
+            const color = this.leaderboardTextColor(i, isCurrent);
+            this.drawLeaderboardRowBg(row.bg, i % 2 === 0, isCurrent);
+            this.drawLeaderboardLine(row.line, 1, isCurrent ? new Color(216, 128, 45, 150) : new Color(216, 156, 92, 80));
+            row.rank.string = isCurrent ? `\u672c\u5c40 #${entry.rank}` : `${this.rankBadge(entry.rank)}#${entry.rank}`;
+            row.score.string = `${entry.score}\u5206`;
+            row.distance.string = `${Math.floor(entry.distance)}m`;
+            row.coins.string = `${entry.coins}\u91d1\u5e01`;
+            row.rank.color = color;
+            row.score.color = color;
+            row.distance.color = color;
+            row.coins.color = color;
         }
     }
 
@@ -299,6 +329,18 @@ export class GameHud extends Component {
     private buildMenu(buttonFrame: SpriteFrame | null, logoFrame: SpriteFrame | null): void {
         if (!this.menuRoot) return;
         this.makeImage('MainLogo', logoFrame, new Vec3(0, 140, 0), 430, 238, this.menuRoot);
+        const bestInfo = this.makeNode('MenuBestInfo', this.menuRoot, new Vec3(0, -82, 0));
+        const bestTransform = bestInfo.addComponent(UITransform);
+        bestTransform.setContentSize(470, 52);
+        const bestBg = bestInfo.addComponent(Graphics);
+        bestBg.fillColor = new Color(255, 244, 203, 198);
+        bestBg.strokeColor = new Color(186, 111, 46, 150);
+        bestBg.lineWidth = 2;
+        bestBg.roundRect(-235, -26, 470, 52, 14);
+        bestBg.fill();
+        bestBg.stroke();
+        this.menuBestTodayLabel = this.makeLabel('MenuBestToday', '\u4eca\u65e5\u6700\u4f73 0', 18, new Vec3(-118, 0, 0), new Color(65, 139, 153, 255), 210, bestInfo);
+        this.menuBestAllLabel = this.makeLabel('MenuBestAll', '\u5386\u53f2\u6700\u9ad8 0', 18, new Vec3(118, 0, 0), new Color(157, 97, 24, 255), 210, bestInfo);
         this.startNode = this.makeButton('StartButton', buttonFrame, new Vec3(-360, -214, 0), TXT.start, this.menuRoot, 160, 54, 21).node;
         this.upgradeNode = this.makeButton('ShopButton', buttonFrame, new Vec3(-120, -214, 0), TXT.shop, this.menuRoot, 160, 54, 21).node;
         this.leaderboardNode = this.makeButton('LeaderboardButton', buttonFrame, new Vec3(120, -214, 0), TXT.rank, this.menuRoot, 160, 54, 21).node;
@@ -368,17 +410,21 @@ export class GameHud extends Component {
             this.upgradeButtons[row.kind] = button.node;
             this.upgradeLabels[row.kind] = button.label;
         }
-        this.makeLabel('SkinTitle', '\u76ae\u80a4', 26, new Vec3(0, -44, 0), new Color(92, 65, 62, 255), 260, this.upgradePanel);
+        this.makeLabel('SkinTitle', '\u89d2\u8272\u76ae\u80a4', 25, new Vec3(0, -40, 0), new Color(92, 65, 62, 255), 260, this.upgradePanel);
         [
             { id: 'classic', label: '\u7ecf\u5178' },
-            { id: 'berry', label: '\u8349\u8393' },
-            { id: 'mint', label: '\u8584\u8377' },
+            { id: 'berry', label: '\u8349\u8393\u751c\u5fc3' },
+            { id: 'mint', label: '\u8584\u8377\u98de\u884c\u5458' },
         ].forEach((skin, index) => {
-            const button = this.makeButton(`Skin_${skin.id}`, buttonFrame, new Vec3(-220 + index * 220, -104, 0), skin.label, this.upgradePanel, 190, 58, 21);
-            this.skinButtons[skin.id] = button.node;
-            this.skinLabels[skin.id] = button.label;
+            const card = this.makeImage(`Skin_${skin.id}`, buttonFrame, new Vec3(-240 + index * 240, -118, 0), 210, 128, this.upgradePanel);
+            const preview = this.makeImage(`Skin_${skin.id}_Preview`, null, new Vec3(0, 22, 0), 92, 92, card);
+            const previewSprite = preview.getComponent(Sprite);
+            const label = this.makeLabel(`Skin_${skin.id}_Label`, skin.label, 18, new Vec3(0, -44, 0), new Color(111, 64, 39, 255), 188, card);
+            this.skinButtons[skin.id] = card;
+            this.skinLabels[skin.id] = label;
+            if (previewSprite) this.skinPreviewSprites[skin.id] = previewSprite;
         });
-        this.upgradeBackNode = this.makeButton('UpgradeBackButton', buttonFrame, new Vec3(0, -196, 0), TXT.back, this.upgradePanel, 220, 62, 24).node;
+        this.upgradeBackNode = this.makeButton('UpgradeBackButton', buttonFrame, new Vec3(0, -218, 0), TXT.back, this.upgradePanel, 220, 54, 22).node;
     }
 
     private buildResult(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null): void {
@@ -413,14 +459,18 @@ export class GameHud extends Component {
         for (let i = 0; i < 10; i++) {
             const y = 106 - i * 30;
             const color = i < 3 ? new Color(190, 115, 54, 255) : new Color(74, 112, 143, 255);
-            this.makeLeaderboardRowBg(`LeaderboardRowBg_${i}`, y, i % 2 === 0);
+            const rowBg = this.makeLeaderboardRowBg(`LeaderboardRowBg_${i}`, y, i % 2 === 0);
             this.leaderboardRows.push({
+                bg: rowBg.bg,
+                line: rowBg.line,
                 rank: this.makeLabel(`LeaderboardRank_${i}`, `#${i + 1}`, 18, new Vec3(-230, y, 0), color, 84, this.leaderboardPanel),
                 score: this.makeLabel(`LeaderboardScore_${i}`, '--', 18, new Vec3(-78, y, 0), color, 144, this.leaderboardPanel),
                 distance: this.makeLabel(`LeaderboardDistance_${i}`, '--', 18, new Vec3(78, y, 0), color, 120, this.leaderboardPanel),
                 coins: this.makeLabel(`LeaderboardCoins_${i}`, '--', 18, new Vec3(224, y, 0), color, 138, this.leaderboardPanel),
             });
         }
+        this.leaderboardEmptyLabel = this.makeLabel('LeaderboardEmpty', '\u8fd8\u6ca1\u6709\u6210\u7ee9\uff0c\u5148\u8dd1\u4e00\u5c40\u5427', 22, new Vec3(0, 22, 0), new Color(112, 112, 120, 220), 520, this.leaderboardPanel);
+        this.setNodeVisible(this.leaderboardEmptyLabel.node, false);
         this.leaderboardBackNode = this.makeButton('LeaderboardBackButton', buttonFrame, new Vec3(0, -196, 0), TXT.back, this.leaderboardPanel, 190, 54, 21).node;
     }
 
@@ -434,27 +484,62 @@ export class GameHud extends Component {
         this.makeLeaderboardLine('LeaderboardHeaderLine', 126, 2, new Color(209, 138, 70, 160));
     }
 
-    private makeLeaderboardRowBg(name: string, y: number, tinted: boolean): void {
-        if (!this.leaderboardPanel) return;
+    private makeLeaderboardRowBg(name: string, y: number, tinted: boolean): { bg: Graphics; line: Graphics } {
+        if (!this.leaderboardPanel) {
+            throw new Error('Leaderboard panel is not ready');
+        }
         const node = this.makeNode(name, this.leaderboardPanel, new Vec3(0, y, 0));
         const transform = node.addComponent(UITransform);
         transform.setContentSize(570, 28);
         const bg = node.addComponent(Graphics);
-        bg.fillColor = tinted ? new Color(255, 238, 190, 70) : new Color(255, 255, 255, 30);
-        bg.roundRect(-285, -14, 570, 28, 8);
-        bg.fill();
-        this.makeLeaderboardLine(`${name}_Line`, y - 15, 1, new Color(216, 156, 92, 80));
+        this.drawLeaderboardRowBg(bg, tinted, false);
+        const line = this.makeLeaderboardLine(`${name}_Line`, y - 15, 1, new Color(216, 156, 92, 80));
+        return { bg, line };
     }
 
-    private makeLeaderboardLine(name: string, y: number, height: number, color: Color): void {
-        if (!this.leaderboardPanel) return;
+    private makeLeaderboardLine(name: string, y: number, height: number, color: Color): Graphics {
+        if (!this.leaderboardPanel) {
+            throw new Error('Leaderboard panel is not ready');
+        }
         const node = this.makeNode(name, this.leaderboardPanel, new Vec3(0, y, 0));
         const transform = node.addComponent(UITransform);
         transform.setContentSize(570, height);
         const line = node.addComponent(Graphics);
+        this.drawLeaderboardLine(line, height, color);
+        return line;
+    }
+
+    private drawLeaderboardRowBg(bg: Graphics, tinted: boolean, current: boolean): void {
+        bg.clear();
+        bg.fillColor = current
+            ? new Color(255, 225, 118, 150)
+            : tinted
+                ? new Color(255, 238, 190, 70)
+                : new Color(255, 255, 255, 30);
+        bg.roundRect(-285, -14, 570, 28, 8);
+        bg.fill();
+    }
+
+    private drawLeaderboardLine(line: Graphics, height: number, color: Color): void {
+        line.clear();
         line.fillColor = color;
         line.rect(-285, -height * 0.5, 570, height);
         line.fill();
+    }
+
+    private leaderboardTextColor(index: number, current: boolean): Color {
+        if (current) return new Color(111, 64, 39, 255);
+        if (index === 0) return new Color(204, 117, 28, 255);
+        if (index === 1) return new Color(123, 126, 142, 255);
+        if (index === 2) return new Color(169, 107, 55, 255);
+        return new Color(74, 112, 143, 255);
+    }
+
+    private rankBadge(rank: number): string {
+        if (rank === 1) return '\u91d1 ';
+        if (rank === 2) return '\u94f6 ';
+        if (rank === 3) return '\u94dc ';
+        return '';
     }
 
     private showOnly(mode: 'menu' | 'game' | 'settings' | 'upgrade' | 'pause' | 'revive' | 'result'): void {
@@ -473,13 +558,37 @@ export class GameHud extends Component {
 
     private updateSaveView(save: HudSaveView, skins: SkinView[]): void {
         if (this.totalCoinLabel) this.totalCoinLabel.string = String(save.totalCoins);
+        if (this.menuBestTodayLabel) this.menuBestTodayLabel.string = `\u4eca\u65e5\u6700\u4f73 ${save.bestScoreToday}`;
+        if (this.menuBestAllLabel) this.menuBestAllLabel.string = `\u5386\u53f2\u6700\u9ad8 ${save.bestScore}`;
         if (this.upgradeCoinLabel) this.upgradeCoinLabel.string = `\u91d1\u5e01 ${save.totalCoins}`;
         for (const skin of skins) {
             const label = this.skinLabels[skin.id];
             const node = this.skinButtons[skin.id];
-            if (label) label.string = skin.selected ? `${skin.label} \u2713` : skin.unlocked ? skin.label : `${skin.label} ${skin.cost}`;
+            const preview = this.skinPreviewSprites[skin.id];
+            const locked = !skin.unlocked;
+            const canBuy = save.totalCoins >= skin.cost;
+            if (label) {
+                label.string = skin.selected
+                    ? `${skin.shortLabel} \u2713`
+                    : skin.unlocked
+                        ? skin.shortLabel
+                        : `${skin.shortLabel} ${skin.cost}`;
+                label.color = locked && !canBuy ? new Color(132, 136, 143, 255) : new Color(111, 64, 39, 255);
+            }
+            if (preview) {
+                preview.spriteFrame = skin.preview;
+                preview.color = locked ? new Color(190, 198, 202, 255) : new Color(255, 255, 255, 255);
+            }
             const sprite = node?.getComponent(Sprite);
-            if (sprite) sprite.color = skin.selected ? new Color(255, 245, 184, 255) : skin.unlocked ? new Color(255, 255, 255, 255) : new Color(205, 218, 224, 255);
+            if (sprite) {
+                sprite.color = skin.selected
+                    ? new Color(255, 245, 184, 255)
+                    : skin.unlocked
+                        ? new Color(255, 255, 255, 255)
+                        : canBuy
+                            ? new Color(237, 247, 250, 255)
+                            : new Color(205, 218, 224, 255);
+            }
         }
     }
 

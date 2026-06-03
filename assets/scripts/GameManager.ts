@@ -74,6 +74,7 @@ type TextureSet = {
     runnerGlide: SpriteFrame[];
     runnerSlide: SpriteFrame[];
     runnerPower: Record<PowerKind, SpriteFrame>;
+    runnerSkins: Record<SkinId, RunnerSkinFrames>;
     coin: SpriteFrame;
     diamond: SpriteFrame;
     magnet: SpriteFrame;
@@ -100,8 +101,20 @@ type TextureSet = {
     uiFont: Font;
 };
 
+type RunnerSkinFrames = {
+    preview: SpriteFrame;
+    run: SpriteFrame[];
+    jump: SpriteFrame[];
+    fall: SpriteFrame;
+    glide: SpriteFrame[];
+    slide: SpriteFrame[];
+    power: Record<PowerKind, SpriteFrame>;
+};
+
 type GameSave = {
     bestScore: number;
+    bestScoreToday: number;
+    bestScoreDate: string;
     totalCoins: number;
     selectedSkin: SkinId;
     unlockedSkins: SkinId[];
@@ -141,10 +154,10 @@ const POWER_NAMES: Record<PowerKind, string> = {
 const DEFAULT_UPGRADES: UpgradeLevels = { magnet: 1, shield: 1, score: 1, dash: 1 };
 const UPGRADE_BASE_COST: Record<PowerKind, number> = { magnet: 80, shield: 90, score: 110, dash: 130 };
 const MAX_UPGRADE_LEVEL = 5;
-const SKINS: Array<{ id: SkinId; label: string; cost: number; color: Color }> = [
-    { id: 'classic', label: '\u7ecf\u5178\u54c8\u57fa\u7c73', cost: 0, color: new Color(255, 255, 255, 255) },
-    { id: 'berry', label: '\u8349\u8393\u54c8\u57fa\u7c73', cost: 160, color: new Color(255, 214, 226, 255) },
-    { id: 'mint', label: '\u8584\u8377\u54c8\u57fa\u7c73', cost: 220, color: new Color(213, 255, 233, 255) },
+const SKINS: Array<{ id: SkinId; label: string; shortLabel: string; cost: number; resourceDir: string }> = [
+    { id: 'classic', label: '\u7ecf\u5178\u54c8\u57fa\u7c73', shortLabel: '\u7ecf\u5178', cost: 0, resourceDir: 'textures/runner/v2' },
+    { id: 'berry', label: '\u8349\u8393\u751c\u5fc3\u54c8\u57fa\u7c73', shortLabel: '\u8349\u8393\u751c\u5fc3', cost: 160, resourceDir: 'textures/runner/skins/berry' },
+    { id: 'mint', label: '\u8584\u8377\u98de\u884c\u5458\u54c8\u57fa\u7c73', shortLabel: '\u8584\u8377\u98de\u884c\u5458', cost: 220, resourceDir: 'textures/runner/skins/mint' },
 ];
 const MISSION_DEFS: MissionDefinition[] = [
     { id: 'coins', label: '\u91d1\u5e01', target: 40, reward: 18 },
@@ -160,6 +173,8 @@ const ACHIEVEMENT_DEFS: AchievementDefinition[] = [
 
 const DEFAULT_SAVE: GameSave = {
     bestScore: 0,
+    bestScoreToday: 0,
+    bestScoreDate: '',
     totalCoins: 0,
     selectedSkin: 'classic',
     unlockedSkins: ['classic'],
@@ -215,6 +230,7 @@ export class GameManager extends Component {
     private spaceHeld = false;
     private touchHeld = false;
     private saveData: GameSave = { ...DEFAULT_SAVE, upgrades: { ...DEFAULT_UPGRADES }, unlockedSkins: ['classic'] };
+    private latestLeaderboardEntry: LeaderboardEntry | null = null;
     private readonly surfaceY = -238;
     private readonly playerGroundY = -184;
     private readonly playerX = -430;
@@ -341,13 +357,14 @@ export class GameManager extends Component {
         this.runner.jumpVelocity = 1190;
         this.runner.doubleJumpVelocity = 1060;
         if (playerSprite) {
+            const skinFrames = this.currentSkinFrames();
             this.runner.setupAnimation(
                 playerSprite,
-                this.textures.runnerRun,
-                this.textures.runnerJump,
-                this.textures.runnerSlide,
-                this.textures.runnerFall,
-                this.textures.runnerGlide,
+                skinFrames.run,
+                skinFrames.jump,
+                skinFrames.slide,
+                skinFrames.fall,
+                skinFrames.glide,
                 this.audioManager,
             );
         }
@@ -484,6 +501,7 @@ export class GameManager extends Component {
 
     private showMenu(): void {
         this.state = 'menu';
+        this.latestLeaderboardEntry = null;
         this.resetRunData();
         this.hud?.setMenu(this.saveView(), this.skinViews());
     }
@@ -548,9 +566,7 @@ export class GameManager extends Component {
         const achievementReward = newAchievements.reduce((sum, achievement) => sum + achievement.reward, 0);
         const reward = baseReward + missionReward + achievementReward;
         this.saveData.totalCoins += reward;
-        if (finalScore > this.saveData.bestScore) {
-            this.saveData.bestScore = finalScore;
-        }
+        this.updateBestScores(finalScore);
         this.saveData.missionsCompleted += missions.filter((mission) => mission.completed).length;
         for (const achievement of newAchievements) {
             this.saveData.achievements[achievement.id] = true;
@@ -566,7 +582,7 @@ export class GameManager extends Component {
             rank,
             missions,
             achievements: newAchievements,
-            leaderboard: this.leaderboardView(10),
+            leaderboard: this.leaderboardView(10, this.latestLeaderboardEntry),
         });
         this.feedback?.shake(this.worldRoot, 12);
         this.audioManager?.playSfx('gameover');
@@ -1088,7 +1104,7 @@ export class GameManager extends Component {
         this.powers[kind] = Math.max(this.powers[kind], duration);
         this.flashPlayer();
         if (this.textures) {
-            this.runner?.playSpecial(this.textures.runnerPower[kind], 0.38);
+            this.runner?.playSpecial(this.currentSkinFrames().power[kind], 0.38);
         }
         this.feedback?.showPulse(this.frameForCollectible(kind), new Vec3(this.playerX, this.playerGroundY + 72, 0), this.powerColor(kind), 120);
     }
@@ -1274,7 +1290,10 @@ export class GameManager extends Component {
     private onStartPressed(): void { this.startRun(); }
     private onSettingsPressed(): void { this.showSettings(); }
     private onUpgradePressed(): void { this.showUpgrade(); }
-    private onLeaderboardPressed(): void { this.hud?.setLeaderboard(this.leaderboardView(10)); }
+    private onLeaderboardPressed(): void {
+        const currentEntry = this.state === 'gameover' ? this.latestLeaderboardEntry : null;
+        this.hud?.setLeaderboard(this.leaderboardView(10, currentEntry));
+    }
     private onLeaderboardBackPressed(): void { this.hud?.closeLeaderboard(); }
     private onReviveAdPressed(): void { this.reviveFromAd(); }
     private onReviveGiveUpPressed(): void { this.gameOver(); }
@@ -1329,10 +1348,30 @@ export class GameManager extends Component {
 
     private applySelectedSkin(): void {
         const sprite = this.player?.getComponent(Sprite);
-        const skin = SKINS.find((item) => item.id === this.saveData.selectedSkin) ?? SKINS[0];
-        if (sprite) {
-            sprite.color = skin.color;
+        const frames = this.currentSkinFrames();
+        if (sprite && this.runner) {
+            sprite.color = new Color(255, 255, 255, 255);
+            this.runner.setupAnimation(
+                sprite,
+                frames.run,
+                frames.jump,
+                frames.slide,
+                frames.fall,
+                frames.glide,
+                this.audioManager,
+            );
+        } else if (sprite) {
+            sprite.spriteFrame = frames.preview;
+            sprite.color = new Color(255, 255, 255, 255);
         }
+    }
+
+    private currentSkinFrames(): RunnerSkinFrames {
+        const textures = this.textures;
+        if (!textures) {
+            throw new Error('Textures not loaded');
+        }
+        return textures.runnerSkins[this.saveData.selectedSkin] ?? textures.runnerSkins.classic;
     }
 
     private powerDuration(kind: PowerKind): number {
@@ -1386,6 +1425,8 @@ export class GameManager extends Component {
     private saveView(): HudSaveView {
         return {
             totalCoins: this.saveData.totalCoins,
+            bestScore: this.saveData.bestScore,
+            bestScoreToday: this.todayBestScore(),
             selectedSkin: this.saveData.selectedSkin,
             upgrades: { ...this.saveData.upgrades },
         };
@@ -1395,10 +1436,11 @@ export class GameManager extends Component {
         return SKINS.map((skin) => ({
             id: skin.id,
             label: skin.label,
+            shortLabel: skin.shortLabel,
             selected: this.saveData.selectedSkin === skin.id,
             unlocked: this.saveData.unlockedSkins.indexOf(skin.id) >= 0,
             cost: skin.cost,
-            color: skin.color,
+            preview: this.textures.runnerSkins[skin.id].preview,
         }));
     }
 
@@ -1454,20 +1496,51 @@ export class GameManager extends Component {
             coins: this.runCoins,
             date: new Date().toISOString(),
         };
-        this.saveData.leaderboard = [...this.saveData.leaderboard, entry]
-            .sort((a, b) => b.score - a.score || b.distance - a.distance || b.coins - a.coins)
-            .slice(0, 10);
-        const index = this.saveData.leaderboard.indexOf(entry);
-        return index >= 0 ? index + 1 : this.saveData.leaderboard.length;
+        this.latestLeaderboardEntry = entry;
+        const ranked = [...this.saveData.leaderboard, entry]
+            .sort((a, b) => b.score - a.score || b.distance - a.distance || b.coins - a.coins);
+        const index = ranked.indexOf(entry);
+        this.saveData.leaderboard = ranked.slice(0, 10);
+        return index >= 0 ? index + 1 : ranked.length;
     }
 
-    private leaderboardView(limit = 10): LeaderboardEntryView[] {
+    private leaderboardView(limit = 10, currentEntry: LeaderboardEntry | null = null): LeaderboardEntryView[] {
         return this.saveData.leaderboard.slice(0, limit).map((entry, index) => ({
             rank: index + 1,
             score: entry.score,
             distance: entry.distance,
             coins: entry.coins,
+            isCurrent: entry === currentEntry,
         }));
+    }
+
+    private updateBestScores(score: number): void {
+        if (score > this.saveData.bestScore) {
+            this.saveData.bestScore = score;
+        }
+        const today = this.todayKey();
+        if (this.saveData.bestScoreDate !== today) {
+            this.saveData.bestScoreDate = today;
+            this.saveData.bestScoreToday = 0;
+        }
+        if (score > this.saveData.bestScoreToday) {
+            this.saveData.bestScoreToday = score;
+        }
+    }
+
+    private todayBestScore(): number {
+        return this.saveData.bestScoreDate === this.todayKey() ? this.saveData.bestScoreToday : 0;
+    }
+
+    private todayKey(): string {
+        const date = new Date();
+        const month = this.twoDigit(date.getMonth() + 1);
+        const day = this.twoDigit(date.getDate());
+        return `${date.getFullYear()}-${month}-${day}`;
+    }
+
+    private twoDigit(value: number): string {
+        return value < 10 ? `0${value}` : String(value);
     }
 
     private loadSave(): GameSave {
@@ -1490,6 +1563,8 @@ export class GameManager extends Component {
             : 'classic';
         return {
             bestScore: Math.max(oldBest, Number(parsed?.bestScore ?? 0)),
+            bestScoreToday: Math.max(0, Math.floor(Number(parsed?.bestScoreToday ?? 0))),
+            bestScoreDate: typeof parsed?.bestScoreDate === 'string' ? parsed.bestScoreDate : '',
             totalCoins: Math.max(0, Math.floor(Number(parsed?.totalCoins ?? 0))),
             selectedSkin: unlocked.indexOf(selected) >= 0 ? selected : 'classic',
             unlockedSkins: unlocked,
@@ -1614,6 +1689,24 @@ export class GameManager extends Component {
             this.loadSpriteFrames('textures/runner/v2/slide', 18),
             this.loadSpriteFrames('textures/runner/v2/glide_land', 20),
         ]);
+        const classicSkin: RunnerSkinFrames = {
+            preview: runnerRun[0],
+            run: runnerRun,
+            jump: runnerJump,
+            fall: runnerJump[Math.min(12, runnerJump.length - 1)],
+            glide: runnerGlide,
+            slide: runnerSlide,
+            power: {
+                magnet: runnerPowerMagnet,
+                shield: runnerPowerShield,
+                dash: runnerPowerDash,
+                score: runnerPowerScore,
+            },
+        };
+        const [berrySkin, mintSkin] = await Promise.all([
+            this.loadRunnerSkin('textures/runner/skins/berry'),
+            this.loadRunnerSkin('textures/runner/skins/mint'),
+        ]);
         return {
             seamlessBg,
             sky,
@@ -1632,6 +1725,11 @@ export class GameManager extends Component {
                 shield: runnerPowerShield,
                 dash: runnerPowerDash,
                 score: runnerPowerScore,
+            },
+            runnerSkins: {
+                classic: classicSkin,
+                berry: berrySkin,
+                mint: mintSkin,
             },
             coin,
             diamond,
@@ -1670,6 +1768,28 @@ export class GameManager extends Component {
                 resolve(font);
             });
         });
+    }
+
+    private async loadRunnerSkin(resourceDir: string): Promise<RunnerSkinFrames> {
+        const [run, jump, slide, glide, magnet, shield, dash, score] = await Promise.all([
+            this.loadSpriteFrames(`${resourceDir}/run`, 26),
+            this.loadSpriteFrames(`${resourceDir}/jump_land`, 18),
+            this.loadSpriteFrames(`${resourceDir}/slide`, 18),
+            this.loadSpriteFrames(`${resourceDir}/glide_land`, 20),
+            this.loadSpriteFrame(`${resourceDir}/runner_power_magnet`),
+            this.loadSpriteFrame(`${resourceDir}/runner_power_shield`),
+            this.loadSpriteFrame(`${resourceDir}/runner_power_dash`),
+            this.loadSpriteFrame(`${resourceDir}/runner_power_score`),
+        ]);
+        return {
+            preview: run[0],
+            run,
+            jump,
+            fall: jump[Math.min(12, jump.length - 1)],
+            glide,
+            slide,
+            power: { magnet, shield, dash, score },
+        };
     }
 
     private loadSpriteFrames(prefix: string, count: number): Promise<SpriteFrame[]> {

@@ -39,3 +39,4 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+tmp_asset_previews/
