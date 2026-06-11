@@ -40,3 +40,8 @@ Thumbs.db
 *.tmp
 *.bak
 tmp_asset_previews/
+
+# Generated review sheets and intermediate art boards.
+art_review/
+runner_action_review_sheet.png
+runner_transition_keyframes_review.png

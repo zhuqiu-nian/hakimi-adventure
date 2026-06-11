@@ -22,7 +22,7 @@ import {
 } from 'cc';
 import { Collectible, CollectibleKind } from './Collectible';
 import { FeedbackManager } from './FeedbackManager';
-import { AchievementView, GameHud, GameOverView, HudIconFrames, HudSaveView, LeaderboardEntryView, MissionView, PowerState, SkinView, UpgradeLevels } from './GameHud';
+import { AchievementEntryView, AchievementView, ConsumableInventory, ConsumableKind, ConsumableShopView, GameHud, GameOverView, HudIconFrames, HudSaveView, LeaderboardEntryView, Language, MissionView, PowerState, SettingsView, ShopTab, SkinView, UpgradeLevels } from './GameHud';
 import { Obstacle, ObstaclePassType } from './Obstacle';
 import { ParallaxLayer } from './ParallaxLayer';
 import { RunnerController } from './RunnerController';
@@ -31,13 +31,15 @@ import { WorldScroller } from './WorldScroller';
 
 const { ccclass, property } = _decorator;
 
-type GameState = 'menu' | 'settings' | 'upgrade' | 'playing' | 'pause' | 'revive' | 'gameover';
+type GameState = 'menu' | 'settings' | 'upgrade' | 'achievements' | 'playing' | 'casual' | 'pause' | 'revive' | 'gameover';
 type ObstacleKind = 'mushroom' | 'cactus' | 'crate' | 'spikes' | 'lowSign' | 'hangingBell';
 type PowerKind = keyof PowerState;
 type SkinId = 'classic' | 'berry' | 'mint';
-type CoinPatternKind = 'cat' | 'bigCat' | 'dog' | 'fish' | 'paw' | 'heart' | 'star' | 'crown' | 'smile' | 'house';
+type CoinPatternKind = 'cat' | 'bigCat' | 'dog' | 'fish' | 'paw' | 'heart' | 'star' | 'crown' | 'smile' | 'house' | 'megaCat' | 'giantPaw' | 'fishboneBig' | 'ribbon' | 'one' | 'two' | 'three' | 'go';
+type CoinTone = 'gold' | 'silver' | 'bronze';
+type CasualCloudKind = 'normal' | 'moving' | 'break' | 'bounce';
 type MissionId = 'coins' | 'distance' | 'dodges';
-type AchievementId = 'first1k' | 'coinCollector' | 'combo20' | 'shieldGuard';
+type AchievementId = 'firstRun' | 'first1k' | 'first3k' | 'coinCollector' | 'coinTycoon' | 'combo20' | 'combo50' | 'shieldGuard' | 'missileGuard' | 'skinCollector' | 'upgradeNovice' | 'upgradeMaster' | 'missionRunner' | 'glideRunner';
 
 type MissileThreat = {
     warningNode: Node;
@@ -81,6 +83,7 @@ type TextureSet = {
     shield: SpriteFrame;
     scoreStar: SpriteFrame;
     dash: SpriteFrame;
+    reviveTicket: SpriteFrame;
     magnetFx: SpriteFrame;
     shieldFx: SpriteFrame;
     scoreFx: SpriteFrame;
@@ -98,7 +101,36 @@ type TextureSet = {
     badge: SpriteFrame;
     logo: SpriteFrame;
     pauseIcon: SpriteFrame;
+    achievementStar: SpriteFrame;
+    achievementIcons: SpriteFrame[];
+    resultBg: SpriteFrame;
+    resultPanel: SpriteFrame;
+    resultScore: SpriteFrame;
+    resultCoin: SpriteFrame;
+    resultDistance: SpriteFrame;
+    resultBest: SpriteFrame;
+    menuBestPanel: SpriteFrame;
+    hudStatsPanel: SpriteFrame;
+    shopPanel: SpriteFrame;
+    achievementPanel: SpriteFrame;
+    settingsPanel: SpriteFrame;
+    pausePanel: SpriteFrame;
+    leaderboardPanel: SpriteFrame;
+    cloudNormal: SpriteFrame;
+    cloudBreak: SpriteFrame;
+    cloudBounce: SpriteFrame;
     uiFont: Font;
+};
+
+type CasualCloud = {
+    node: Node;
+    kind: CasualCloudKind;
+    width: number;
+    height: number;
+    used: boolean;
+    moveDir: number;
+    moveSpeed: number;
+    baseX: number;
 };
 
 type RunnerSkinFrames = {
@@ -111,17 +143,29 @@ type RunnerSkinFrames = {
     power: Record<PowerKind, SpriteFrame>;
 };
 
+type GameSettings = {
+    language: Language;
+    bgmVolume: number;
+    sfxVolume: number;
+    assistHints: boolean;
+};
+
 type GameSave = {
     bestScore: number;
     bestScoreToday: number;
     bestScoreDate: string;
     totalCoins: number;
+    totalStars: number;
+    totalRuns: number;
+    totalDistance: number;
     selectedSkin: SkinId;
     unlockedSkins: SkinId[];
     upgrades: UpgradeLevels;
+    inventory: ConsumableInventory;
     missionsCompleted: number;
     leaderboard: LeaderboardEntry[];
     achievements: Partial<Record<AchievementId, boolean>>;
+    settings: GameSettings;
 };
 
 type LeaderboardEntry = {
@@ -141,6 +185,7 @@ type MissionDefinition = {
 type AchievementDefinition = {
     id: AchievementId;
     label: string;
+    description: string;
     reward: number;
 };
 
@@ -151,7 +196,16 @@ const POWER_NAMES: Record<PowerKind, string> = {
     score: '\u53cc\u500d',
     dash: '\u51b2\u523a',
 };
+const POWER_NAMES_EN: Record<PowerKind, string> = {
+    magnet: 'Magnet',
+    shield: 'Shield',
+    score: 'Double',
+    dash: 'Dash',
+};
 const DEFAULT_UPGRADES: UpgradeLevels = { magnet: 1, shield: 1, score: 1, dash: 1 };
+const DEFAULT_SETTINGS: GameSettings = { language: 'zh', bgmVolume: 0.65, sfxVolume: 0.8, assistHints: true };
+const DEFAULT_INVENTORY: ConsumableInventory = { startDash: 0, reviveTicket: 0, startShield: 0 };
+const CONSUMABLE_COSTS: Record<ConsumableKind, number> = { startDash: 120, reviveTicket: 180, startShield: 90 };
 const UPGRADE_BASE_COST: Record<PowerKind, number> = { magnet: 80, shield: 90, score: 110, dash: 130 };
 const MAX_UPGRADE_LEVEL = 5;
 const SKINS: Array<{ id: SkinId; label: string; shortLabel: string; cost: number; resourceDir: string }> = [
@@ -165,10 +219,20 @@ const MISSION_DEFS: MissionDefinition[] = [
     { id: 'dodges', label: '\u8d8a\u8fc7', target: 8, reward: 20 },
 ];
 const ACHIEVEMENT_DEFS: AchievementDefinition[] = [
-    { id: 'first1k', label: '\u9996\u6b21 1000m', reward: 50 },
-    { id: 'coinCollector', label: '\u7d2f\u8ba1 500 \u91d1\u5e01', reward: 80 },
-    { id: 'combo20', label: '\u5355\u5c40 20 \u8fde\u51fb', reward: 45 },
-    { id: 'shieldGuard', label: '\u62a4\u76fe\u62b5\u6321 3 \u6b21', reward: 45 },
+    { id: 'firstRun', label: '\u521d\u6b21\u51fa\u53d1', description: '\u5b8c\u6210\u4efb\u610f\u4e00\u5c40', reward: 1 },
+    { id: 'first1k', label: '\u9996\u6b21 1000m', description: '\u5355\u5c40\u91cc\u7a0b\u8fbe\u5230 1000m', reward: 2 },
+    { id: 'first3k', label: '\u8fdc\u884c\u732b\u732b', description: '\u5355\u5c40\u91cc\u7a0b\u8fbe\u5230 3000m', reward: 4 },
+    { id: 'coinCollector', label: '\u95ea\u4eae\u6536\u85cf\u5bb6', description: '\u6301\u6709 500 \u91d1\u5e01', reward: 2 },
+    { id: 'coinTycoon', label: '\u91d1\u5e01\u5c0f\u5bcc\u8c6a', description: '\u6301\u6709 1500 \u91d1\u5e01', reward: 4 },
+    { id: 'combo20', label: '20 \u8fde\u51fb', description: '\u5355\u5c40\u8fbe\u6210 20 \u8fde\u51fb', reward: 2 },
+    { id: 'combo50', label: '50 \u8fde\u51fb', description: '\u5355\u5c40\u8fbe\u6210 50 \u8fde\u51fb', reward: 4 },
+    { id: 'shieldGuard', label: '\u62a4\u76fe\u5b88\u62a4', description: '\u5355\u5c40\u62a4\u76fe\u62b5\u6321 3 \u6b21', reward: 3 },
+    { id: 'missileGuard', label: '\u5bfc\u5f39\u514b\u661f', description: '\u7528\u62a4\u76fe\u6216\u51b2\u523a\u6321\u4e0b\u5bfc\u5f39', reward: 3 },
+    { id: 'skinCollector', label: '\u8863\u6a71\u6536\u85cf', description: '\u89e3\u9501 3 \u4e2a\u76ae\u80a4', reward: 3 },
+    { id: 'upgradeNovice', label: '\u9053\u5177\u65b0\u624b', description: '\u4efb\u610f\u9053\u5177\u5347\u5230 Lv.3', reward: 2 },
+    { id: 'upgradeMaster', label: '\u9053\u5177\u5927\u5e08', description: '\u6240\u6709\u9053\u5177\u5347\u5230 Lv.5', reward: 5 },
+    { id: 'missionRunner', label: '\u4efb\u52a1\u8fbe\u4eba', description: '\u7d2f\u8ba1\u5b8c\u6210 10 \u4e2a\u4efb\u52a1', reward: 3 },
+    { id: 'glideRunner', label: '\u6ed1\u7fd4\u9ad8\u624b', description: '\u5355\u5c40\u8d85\u8fc7 1800m', reward: 3 },
 ];
 
 const DEFAULT_SAVE: GameSave = {
@@ -176,12 +240,17 @@ const DEFAULT_SAVE: GameSave = {
     bestScoreToday: 0,
     bestScoreDate: '',
     totalCoins: 0,
+    totalStars: 0,
+    totalRuns: 0,
+    totalDistance: 0,
     selectedSkin: 'classic',
     unlockedSkins: ['classic'],
     upgrades: { ...DEFAULT_UPGRADES },
+    inventory: { ...DEFAULT_INVENTORY },
     missionsCompleted: 0,
     leaderboard: [],
     achievements: {},
+    settings: { ...DEFAULT_SETTINGS },
 };
 
 @ccclass('GameManager')
@@ -201,6 +270,8 @@ export class GameManager extends Component {
     private obstacleRoot: Node | null = null;
     private itemRoot: Node | null = null;
     private missileRoot: Node | null = null;
+    private casualRoot: Node | null = null;
+    private casualPlayer: Node | null = null;
     private feedbackRoot: Node | null = null;
     private player: Node | null = null;
     private playerFxRoot: Node | null = null;
@@ -214,6 +285,7 @@ export class GameManager extends Component {
     private obstacles: Obstacle[] = [];
     private collectibles: Collectible[] = [];
     private missiles: MissileThreat[] = [];
+    private casualClouds: CasualCloud[] = [];
     private powers: PowerState = { magnet: 0, shield: 0, score: 0, dash: 0 };
     private speed = 0;
     private distance = 0;
@@ -224,12 +296,27 @@ export class GameManager extends Component {
     private comboTimer = 0;
     private dodges = 0;
     private shieldBlocks = 0;
+    private missileBlocks = 0;
     private reviveUsed = false;
     private nextSpawnX = 720;
     private missileCooldown = 0;
     private spaceHeld = false;
     private touchHeld = false;
-    private saveData: GameSave = { ...DEFAULT_SAVE, upgrades: { ...DEFAULT_UPGRADES }, unlockedSkins: ['classic'] };
+    private pendingSpaceAirAction = -1;
+    private pendingTouchAirAction = -1;
+    private jumpIntentTimer = -1;
+    private touchJumpIntentTimer = -1;
+    private casualVelocityY = 0;
+    private casualHighestStep = 0;
+    private casualLastPlayerY = 0;
+    private casualNextCloudY = -160;
+    private casualInputX = 0;
+    private casualLastBounceCloud: Node | null = null;
+    private casualLastCloudX = 0;
+    private pausedFromCasual = false;
+    private lastRunMode: 'run' | 'casual' = 'run';
+    private shopTab: ShopTab = 'buy';
+    private saveData: GameSave = { ...DEFAULT_SAVE, upgrades: { ...DEFAULT_UPGRADES }, inventory: { ...DEFAULT_INVENTORY }, unlockedSkins: ['classic'], settings: { ...DEFAULT_SETTINGS } };
     private latestLeaderboardEntry: LeaderboardEntry | null = null;
     private readonly surfaceY = -238;
     private readonly playerGroundY = -184;
@@ -243,25 +330,32 @@ export class GameManager extends Component {
     private readonly minObstacleGap = 260;
     private readonly missileUnlockDistance = 900;
     private readonly missileBaseCooldown = 7.4;
+    private readonly glideDecisionDelay = 0.11;
+    private readonly jumpIntentDelay = 0.11;
+    private readonly casualGravity = -1450;
+    private readonly casualJumpVelocity = 850;
+    private readonly casualMoveSpeed = 380;
     private readonly saveKey = 'hakimi_adventure_save_v2';
     private readonly oldBestKey = 'hakimi_adventure_best_score';
     private readonly coursePatterns: CoursePattern[] = [
         { length: 620, obstacles: [{ x: 230, kind: 'mushroom' }], coinArcs: [{ x: 360, y: 158, count: 5 }], coinPatterns: [{ x: 470, y: 230, kind: 'paw' }] },
-        { length: 680, obstacles: [{ x: 270, kind: 'spikes' }], coinArcs: [{ x: 90, y: 104, count: 5 }, { x: 430, y: 178, count: 5 }], powers: [{ x: 580, y: 208, kind: 'magnet' }] },
-        { length: 700, obstacles: [{ x: 300, kind: 'crate' }], coinArcs: [{ x: 110, y: 115, count: 5 }], coinPatterns: [{ x: 440, y: 230, kind: 'heart' }], powers: [{ x: 610, y: 212, kind: 'magnet' }] },
+        { length: 680, obstacles: [{ x: 270, kind: 'spikes' }], coinArcs: [{ x: 90, y: 104, count: 5 }, { x: 430, y: 178, count: 5 }] },
+        { length: 700, obstacles: [{ x: 300, kind: 'crate' }], coinArcs: [{ x: 110, y: 115, count: 5 }], coinPatterns: [{ x: 440, y: 230, kind: 'heart' }] },
         { length: 740, minDistance: 260, obstacles: [{ x: 280, kind: 'cactus' }], coinArcs: [{ x: 80, y: 125, count: 4 }], coinPatterns: [{ x: 470, y: 238, kind: 'star' }], powers: [{ x: 640, y: 230, kind: 'shield' }] },
         { length: 780, minDistance: 520, obstacles: [{ x: 300, kind: 'lowSign' }], coinPatterns: [{ x: 470, y: 160, kind: 'fish' }] },
         { length: 860, minDistance: 760, obstacles: [{ x: 220, kind: 'mushroom' }, { x: 560, kind: 'spikes' }], coinArcs: [{ x: 350, y: 220, count: 6 }] },
-        { length: 920, minDistance: 980, obstacles: [{ x: 240, kind: 'crate' }, { x: 650, kind: 'cactus' }], coinPatterns: [{ x: 450, y: 250, kind: 'bigCat' }], powers: [{ x: 760, y: 260, kind: 'score' }] },
+        { length: 920, minDistance: 980, obstacles: [{ x: 240, kind: 'crate' }, { x: 650, kind: 'cactus' }], coinPatterns: [{ x: 450, y: 250, kind: 'bigCat' }] },
         { length: 900, minDistance: 1200, obstacles: [{ x: 260, kind: 'hangingBell' }, { x: 650, kind: 'mushroom' }], coinArcs: [{ x: 145, y: 105, count: 4 }, { x: 510, y: 230, count: 5 }] },
         { length: 940, minDistance: 1500, obstacles: [{ x: 270, kind: 'mushroom' }, { x: 650, kind: 'spikes' }], coinArcs: [{ x: 130, y: 150, count: 5 }], coinPatterns: [{ x: 690, y: 235, kind: 'dog' }], powers: [{ x: 480, y: 238, kind: 'dash' }] },
-        { length: 980, minDistance: 1800, obstacles: [{ x: 260, kind: 'cactus' }, { x: 690, kind: 'hangingBell' }], coinPatterns: [{ x: 430, y: 238, kind: 'crown' }], powers: [{ x: 790, y: 255, kind: 'shield' }] },
+        { length: 980, minDistance: 1800, obstacles: [{ x: 260, kind: 'cactus' }, { x: 690, kind: 'hangingBell' }], coinPatterns: [{ x: 430, y: 238, kind: 'crown' }] },
         { length: 1020, minDistance: 2150, obstacles: [{ x: 250, kind: 'crate' }, { x: 620, kind: 'spikes' }, { x: 930, kind: 'mushroom' }], coinArcs: [{ x: 110, y: 120, count: 5 }], coinPatterns: [{ x: 720, y: 240, kind: 'smile' }] },
-        { length: 1040, minDistance: 2500, obstacles: [{ x: 280, kind: 'spikes' }, { x: 690, kind: 'cactus' }], coinPatterns: [{ x: 430, y: 250, kind: 'house' }], powers: [{ x: 860, y: 245, kind: 'score' }] },
+        { length: 1040, minDistance: 2500, obstacles: [{ x: 280, kind: 'spikes' }, { x: 690, kind: 'cactus' }], coinPatterns: [{ x: 430, y: 250, kind: 'house' }] },
         { length: 1080, minDistance: 2900, obstacles: [{ x: 260, kind: 'lowSign' }, { x: 670, kind: 'crate' }], coinArcs: [{ x: 390, y: 165, count: 5 }], coinPatterns: [{ x: 820, y: 238, kind: 'cat' }] },
         { length: 1120, minDistance: 3300, obstacles: [{ x: 300, kind: 'cactus' }, { x: 760, kind: 'cactus' }], coinArcs: [{ x: 130, y: 110, count: 4 }], coinPatterns: [{ x: 560, y: 245, kind: 'bigCat' }], powers: [{ x: 920, y: 245, kind: 'dash' }] },
-        { length: 1180, minDistance: 3800, obstacles: [{ x: 260, kind: 'crate' }, { x: 680, kind: 'spikes' }, { x: 1010, kind: 'lowSign' }], coinPatterns: [{ x: 470, y: 220, kind: 'star' }, { x: 860, y: 160, kind: 'fish' }] },
-        { length: 1240, minDistance: 4300, obstacles: [{ x: 280, kind: 'lowSign' }, { x: 720, kind: 'mushroom' }, { x: 1080, kind: 'crate' }], coinArcs: [{ x: 130, y: 105, count: 4 }], coinPatterns: [{ x: 840, y: 260, kind: 'crown' }], powers: [{ x: 1040, y: 245, kind: 'magnet' }] },
+        { length: 1180, minDistance: 3800, obstacles: [{ x: 260, kind: 'crate' }, { x: 680, kind: 'spikes' }, { x: 1010, kind: 'lowSign' }], coinPatterns: [{ x: 470, y: 220, kind: 'star' }, { x: 860, y: 160, kind: 'fishboneBig' }] },
+        { length: 1240, minDistance: 4300, obstacles: [{ x: 280, kind: 'lowSign' }, { x: 720, kind: 'mushroom' }, { x: 1080, kind: 'crate' }], coinArcs: [{ x: 130, y: 105, count: 4 }], coinPatterns: [{ x: 840, y: 260, kind: 'giantPaw' }], powers: [{ x: 1040, y: 245, kind: 'magnet' }] },
+        { length: 1320, minDistance: 4800, obstacles: [{ x: 320, kind: 'hangingBell' }, { x: 860, kind: 'spikes' }], coinPatterns: [{ x: 610, y: 265, kind: 'megaCat' }] },
+        { length: 1260, minDistance: 5400, obstacles: [{ x: 260, kind: 'crate' }, { x: 720, kind: 'hangingBell' }], coinPatterns: [{ x: 520, y: 225, kind: 'ribbon' }], powers: [{ x: 1020, y: 245, kind: 'score' }] },
     ];
 
     public async start(): Promise<void> {
@@ -287,18 +381,23 @@ export class GameManager extends Component {
             return;
         }
         const running = this.state === 'playing';
-        if (running && (this.spaceHeld || this.touchHeld)) {
-            this.runner.startGlide();
-        }
+        const casualRunning = this.state === 'casual';
         this.runner.tick(dt, running);
+        if (casualRunning) {
+            this.updateCasualMode(dt);
+            return;
+        }
         if (!running) {
             return;
         }
+        this.updateAirActionDecision(dt);
 
         this.tickPowers(dt);
         this.updatePowerEffects(dt);
         const dashBoost = this.powers.dash > 0 ? 1.55 : 1;
-        this.speed = Math.min(this.maxSpeed, this.speed + this.speedGain * dt);
+        const speedProgress = 1 - Math.exp(-this.distance / 3600);
+        const targetSpeed = this.baseSpeed + (this.maxSpeed - this.baseSpeed) * speedProgress;
+        this.speed += (Math.min(this.maxSpeed, targetSpeed) - this.speed) * Math.min(1, dt * 0.55);
         const activeSpeed = this.speed * dashBoost;
         const multiplier = this.currentMultiplier();
         this.distance += activeSpeed * dt * 0.03;
@@ -321,6 +420,7 @@ export class GameManager extends Component {
         this.checkObstacles();
         this.checkMissiles();
         this.updateHud();
+        this.checkAchievementsNow();
     }
 
     private buildScene(): void {
@@ -348,6 +448,8 @@ export class GameManager extends Component {
         this.obstacleRoot = this.makeNode('Obstacles', this.worldRoot, Vec3.ZERO);
         this.itemRoot = this.makeNode('CollectiblesAndPowerups', this.worldRoot, Vec3.ZERO);
         this.missileRoot = this.makeNode('Missiles', this.worldRoot, Vec3.ZERO);
+        this.casualRoot = this.makeNode('CasualMode', this.worldRoot, Vec3.ZERO);
+        this.casualRoot.active = false;
         this.player = this.makeSprite('HakimiRunner', this.worldRoot, this.textures.runner, 172, 172, new Vec3(this.playerX, this.playerGroundY, 0));
         this.playerFxRoot = this.makeNode('PlayerFxRoot', this.player, Vec3.ZERO);
         this.buildPlayerEffects();
@@ -386,13 +488,57 @@ export class GameManager extends Component {
             dash: this.textures.dash,
             badge: this.textures.badge,
             pause: this.textures.pauseIcon,
+            reviveTicket: this.textures.reviveTicket,
+            achievementStar: this.textures.achievementStar,
+            achievementIcons: this.textures.achievementIcons,
+            resultBg: this.textures.resultBg,
+            resultPanel: this.textures.resultPanel,
+            resultScore: this.textures.resultScore,
+            resultCoin: this.textures.resultCoin,
+            resultDistance: this.textures.resultDistance,
+            resultBest: this.textures.resultBest,
+            menuBestPanel: this.textures.menuBestPanel,
+            hudStatsPanel: this.textures.hudStatsPanel,
+            shopPanel: this.textures.shopPanel,
+            achievementPanel: this.textures.achievementPanel,
+            settingsPanel: this.textures.settingsPanel,
+            pausePanel: this.textures.pausePanel,
+            leaderboardPanel: this.textures.leaderboardPanel,
+            cloudNormal: this.textures.cloudNormal,
+            cloudBreak: this.textures.cloudBreak,
+            cloudBounce: this.textures.cloudBounce,
         };
         this.hud.build(this.textures.button, this.textures.panel, this.textures.logo, icons, this.textures.uiFont);
         this.feedbackRoot = this.makeNode('FeedbackRoot', uiRoot, Vec3.ZERO);
         this.feedback = this.feedbackRoot.addComponent(FeedbackManager);
         this.feedback.setup(this.textures.coin);
+        this.applySettings();
         this.bindHudButtons();
         this.makeLabel('VersionLabel', 'Demo v1 - Cocos Creator 3.8.8', 18, new Vec3(465, -328, 0), new Color(105, 119, 132, 190), uiRoot);
+    }
+
+    private updateAirActionDecision(dt: number): void {
+        if (!this.runner) {
+            return;
+        }
+        if (this.jumpIntentTimer >= 0) {
+            this.jumpIntentTimer -= dt;
+            if (this.jumpIntentTimer <= 0) {
+                if (this.spaceHeld && this.runner.isAirborne) {
+                    this.runner.startGlide();
+                }
+                this.jumpIntentTimer = -1;
+            }
+        }
+        if (this.touchJumpIntentTimer >= 0) {
+            this.touchJumpIntentTimer -= dt;
+            if (this.touchJumpIntentTimer <= 0) {
+                if (this.touchHeld && this.runner.isAirborne) {
+                    this.runner.startGlide();
+                }
+                this.touchJumpIntentTimer = -1;
+            }
+        }
     }
 
     private buildPlayerEffects(): void {
@@ -438,23 +584,40 @@ export class GameManager extends Component {
             node.on(Node.EventType.TOUCH_END, callback, this);
         };
         addButton(this.hud?.getStartNode() ?? null, this.onStartPressed);
+        addButton(this.hud?.getCasualNode() ?? null, this.onCasualPressed);
         addButton(this.hud?.getSettingsNode() ?? null, this.onSettingsPressed);
         addButton(this.hud?.getUpgradeNode() ?? null, this.onUpgradePressed);
+        addButton(this.hud?.getAchievementsNode() ?? null, this.onAchievementsPressed);
         addButton(this.hud?.getLeaderboardNode() ?? null, this.onLeaderboardPressed);
         addButton(this.hud?.getPauseNode() ?? null, this.onPausePressed);
         addButton(this.hud?.getContinueNode() ?? null, this.onContinuePressed);
         addButton(this.hud?.getMenuNode() ?? null, this.onMenuPressed);
         addButton(this.hud?.getSettingsBackNode() ?? null, this.onBackPressed);
+        addButton(this.hud?.getSettingsLanguageNode() ?? null, this.onSettingsLanguagePressed);
+        addButton(this.hud?.getSettingsBgmMinusNode() ?? null, () => this.adjustBgmVolume(-0.1));
+        addButton(this.hud?.getSettingsBgmPlusNode() ?? null, () => this.adjustBgmVolume(0.1));
+        addButton(this.hud?.getSettingsSfxMinusNode() ?? null, () => this.adjustSfxVolume(-0.1));
+        addButton(this.hud?.getSettingsSfxPlusNode() ?? null, () => this.adjustSfxVolume(0.1));
+        addButton(this.hud?.getSettingsAssistNode() ?? null, this.onSettingsAssistPressed);
+        addButton(this.hud?.getSettingsResetSaveNode() ?? null, this.onSettingsResetSavePressed);
+        addButton(this.hud?.getSettingsResetRankNode() ?? null, this.onSettingsResetRankPressed);
         addButton(this.hud?.getUpgradeBackNode() ?? null, this.onBackPressed);
+        addButton(this.hud?.getAchievementsBackNode() ?? null, this.onBackPressed);
+        for (const tab of ['buy', 'upgrade', 'character', 'skin'] as ShopTab[]) {
+            addButton(this.hud?.getShopTabNode(tab) ?? null, () => this.onShopTabPressed(tab));
+        }
         addButton(this.hud?.getLeaderboardBackNode() ?? null, this.onLeaderboardBackPressed);
         addButton(this.hud?.getReviveAdNode() ?? null, this.onReviveAdPressed);
         addButton(this.hud?.getReviveGiveUpNode() ?? null, this.onReviveGiveUpPressed);
-        addButton(this.hud?.getRetryNode() ?? null, this.onStartPressed);
+        addButton(this.hud?.getRetryNode() ?? null, this.onRetryPressed);
         addButton(this.hud?.getResultMenuNode() ?? null, this.onMenuPressed);
         addButton(this.hud?.getResultShopNode() ?? null, this.onUpgradePressed);
         addButton(this.hud?.getResultLeaderboardNode() ?? null, this.onLeaderboardPressed);
         for (const kind of POWER_KINDS) {
             addButton(this.hud?.getUpgradeButton(kind) ?? null, () => this.buyUpgrade(kind));
+        }
+        for (const kind of Object.keys(DEFAULT_INVENTORY) as ConsumableKind[]) {
+            addButton(this.hud?.getConsumableButton(kind) ?? null, () => this.buyConsumable(kind));
         }
         for (const skin of SKINS) {
             addButton(this.hud?.getSkinButton(skin.id) ?? null, () => this.selectSkin(skin.id));
@@ -482,11 +645,16 @@ export class GameManager extends Component {
         this.comboTimer = 0;
         this.dodges = 0;
         this.shieldBlocks = 0;
+        this.missileBlocks = 0;
         this.reviveUsed = false;
         this.nextSpawnX = 700;
         this.missileCooldown = 3.8;
         this.spaceHeld = false;
         this.touchHeld = false;
+        this.pendingSpaceAirAction = -1;
+        this.pendingTouchAirAction = -1;
+        this.jumpIntentTimer = -1;
+        this.touchJumpIntentTimer = -1;
         this.powers = { magnet: 0, shield: 0, score: 0, dash: 0 };
         this.updatePowerEffects(0);
         this.obstacles.length = 0;
@@ -495,7 +663,11 @@ export class GameManager extends Component {
         this.obstacleRoot?.removeAllChildren();
         this.itemRoot?.removeAllChildren();
         this.missileRoot?.removeAllChildren();
+        this.clearCasualMode();
         this.runner?.reset(this.playerX);
+        if (this.player) {
+            this.player.active = true;
+        }
         this.updateHud();
     }
 
@@ -504,35 +676,70 @@ export class GameManager extends Component {
         this.latestLeaderboardEntry = null;
         this.resetRunData();
         this.hud?.setMenu(this.saveView(), this.skinViews());
+        this.audioManager?.playBgm('audio/background');
     }
 
     private showSettings(): void {
         this.state = 'settings';
-        this.hud?.setSettings();
+        this.hud?.setSettings(this.settingsView());
     }
 
     private showUpgrade(): void {
         this.state = 'upgrade';
-        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts());
+        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts(), this.consumableViews(), this.shopTab);
+    }
+
+    private showAchievements(): void {
+        this.state = 'achievements';
+        this.hud?.setAchievements(this.saveView(), this.achievementViews());
     }
 
     private startRun(): void {
         if (this.state === 'playing') {
             return;
         }
+        this.lastRunMode = 'run';
         this.resetRunData();
+        if (this.casualRoot) {
+            this.casualRoot.active = false;
+        }
+        if (this.player) {
+            this.player.active = true;
+        }
         this.spawnInitialCourse();
         this.state = 'playing';
         this.hud?.setPlaying();
-        this.feedback?.showText('\u51fa\u53d1\uff01', new Vec3(0, 20, 0), new Color(255, 152, 84, 255), 34);
+        this.applyStartConsumables();
+        this.feedback?.showText(this.t('\u51fa\u53d1\uff01', 'Go!'), new Vec3(0, 20, 0), new Color(255, 152, 84, 255), 34);
+        if (this.saveData.settings.assistHints) {
+            this.feedback?.showText(this.t('\u7a7a\u683c\u8df3\u8dc3  \u957f\u6309\u6ed1\u7fd4  S\u4e0b\u6ed1', 'Space jump  Hold glide  S slide'), new Vec3(0, -26, 0), new Color(74, 112, 143, 235), 20);
+        }
+        this.audioManager?.playBgm('audio/background');
+        this.audioManager?.playSfx('start');
+    }
+
+    private startCasualMode(): void {
+        if (this.state === 'casual') {
+            return;
+        }
+        this.lastRunMode = 'casual';
+        this.resetRunData();
+        this.state = 'casual';
+        this.hud?.setPlaying();
+        this.setupCasualMode();
+        this.feedback?.showText(this.t('\u4f11\u95f2\u6a21\u5f0f\uff01', 'Casual mode!'), new Vec3(0, 20, 0), new Color(255, 152, 84, 255), 34);
+        if (this.saveData.settings.assistHints) {
+            this.feedback?.showText(this.t('\u65b9\u5411\u952e\u79fb\u52a8  \u8e29\u4e91\u5411\u4e0a', 'Move with arrows, land on clouds'), new Vec3(0, -26, 0), new Color(74, 112, 143, 235), 20);
+        }
         this.audioManager?.playBgm('audio/background');
         this.audioManager?.playSfx('start');
     }
 
     private pauseRun(): void {
-        if (this.state !== 'playing') {
+        if (this.state !== 'playing' && this.state !== 'casual') {
             return;
         }
+        this.pausedFromCasual = this.state === 'casual';
         this.state = 'pause';
         this.hud?.setPause();
     }
@@ -541,20 +748,26 @@ export class GameManager extends Component {
         if (this.state !== 'pause') {
             return;
         }
-        this.state = 'playing';
+        this.state = this.pausedFromCasual ? 'casual' : 'playing';
         this.hud?.setPlaying();
     }
 
     public setBgmVolume(volume: number): void {
+        this.saveData.settings.bgmVolume = this.clamp01(volume);
         this.audioManager?.setBgmVolume(volume);
+        this.saveGame();
+        this.hud?.updateSettings(this.settingsView());
     }
 
     public setSfxVolume(volume: number): void {
+        this.saveData.settings.sfxVolume = this.clamp01(volume);
         this.audioManager?.setSfxVolume(volume);
+        this.saveGame();
+        this.hud?.updateSettings(this.settingsView());
     }
 
     private gameOver(): void {
-        if (this.state !== 'playing' && this.state !== 'revive') {
+        if (this.state !== 'playing' && this.state !== 'casual' && this.state !== 'revive') {
             return;
         }
         this.state = 'gameover';
@@ -562,15 +775,13 @@ export class GameManager extends Component {
         const baseReward = this.runCoins + Math.floor(this.distance / 120);
         const missions = this.missionViews();
         const missionReward = missions.reduce((sum, mission) => sum + (mission.completed ? mission.reward : 0), 0);
-        const newAchievements = this.unlockedAchievements(finalScore, this.saveData.totalCoins + baseReward + missionReward);
-        const achievementReward = newAchievements.reduce((sum, achievement) => sum + achievement.reward, 0);
-        const reward = baseReward + missionReward + achievementReward;
+        const reward = baseReward + missionReward;
         this.saveData.totalCoins += reward;
+        this.saveData.totalRuns += 1;
+        this.saveData.totalDistance += Math.floor(this.distance);
         this.updateBestScores(finalScore);
         this.saveData.missionsCompleted += missions.filter((mission) => mission.completed).length;
-        for (const achievement of newAchievements) {
-            this.saveData.achievements[achievement.id] = true;
-        }
+        this.checkAchievementsNow(this.saveData.totalCoins, true);
         const rank = this.recordLeaderboard(finalScore);
         this.saveGame();
         this.hud?.setGameOver({
@@ -578,10 +789,11 @@ export class GameManager extends Component {
             runCoins: this.runCoins,
             totalCoins: this.saveData.totalCoins,
             distance: this.distance,
+            bestScore: this.saveData.bestScore,
             reward,
             rank,
             missions,
-            achievements: newAchievements,
+            achievements: [],
             leaderboard: this.leaderboardView(10, this.latestLeaderboardEntry),
         });
         this.feedback?.shake(this.worldRoot, 12);
@@ -595,15 +807,189 @@ export class GameManager extends Component {
     }
 
     private spawnInitialCourse(): void {
-        for (let i = 0; i < 4; i++) {
-            this.spawnCoinArc(250 + i * 260, 110 + (i % 2) * 42);
-        }
-        this.spawnPowerup(560, 'magnet', 170);
-        this.spawnPowerup(880, 'shield', 190);
-        this.spawnPowerup(1180, 'score', 170);
-        this.spawnObstacle(1520, 'hangingBell');
-        this.nextSpawnX = 1960;
+        this.spawnIntroCoinBillboard(960, this.surfaceY + 292);
+        this.spawnPowerup(2180, 'magnet', 180);
+        this.spawnPowerup(2440, 'shield', 190);
+        this.nextSpawnX = 3300;
         this.spawnWhileNeeded();
+    }
+
+    private setupCasualMode(): void {
+        if (!this.textures || !this.casualRoot || !this.player) {
+            return;
+        }
+        this.clearCasualMode();
+        this.obstacleRoot?.removeAllChildren();
+        this.itemRoot?.removeAllChildren();
+        this.missileRoot?.removeAllChildren();
+        this.casualRoot.active = true;
+        this.player.active = true;
+        const sprite = this.player.getComponent(Sprite);
+        if (sprite) {
+            sprite.spriteFrame = this.textures.runner;
+        }
+        this.player.setPosition(0, -120, 0);
+        this.player.setScale(0.9, 0.9, 1);
+        this.player.angle = 0;
+        this.casualVelocityY = this.casualJumpVelocity;
+        this.casualHighestStep = 0;
+        this.casualLastPlayerY = this.player.position.y;
+        this.casualNextCloudY = -210;
+        this.casualInputX = 0;
+        this.casualLastBounceCloud = null;
+        this.casualLastCloudX = -80;
+        const startXs = [-170, 40, 230, 20, -190, 70, 260, -30];
+        for (const x of startXs) {
+            this.spawnCasualCloud(x, this.casualNextCloudY, 'normal');
+            this.casualNextCloudY += 96;
+        }
+    }
+
+    private clearCasualMode(): void {
+        this.casualRoot?.removeAllChildren();
+        this.casualClouds.length = 0;
+        this.casualPlayer = null;
+        this.casualVelocityY = 0;
+        this.casualHighestStep = 0;
+        this.casualLastPlayerY = 0;
+        this.casualNextCloudY = -160;
+        this.casualLastBounceCloud = null;
+        this.casualLastCloudX = 0;
+        if (this.casualRoot) {
+            this.casualRoot.active = false;
+        }
+    }
+
+    private updateCasualMode(dt: number): void {
+        if (!this.player || !this.casualRoot || !this.textures) {
+            return;
+        }
+        this.casualLastPlayerY = this.player.position.y;
+        const pos = this.player.position.clone();
+        pos.x += this.casualInputX * this.casualMoveSpeed * dt;
+        if (pos.x < -650) pos.x = 650;
+        if (pos.x > 650) pos.x = -650;
+        this.casualVelocityY += this.casualGravity * dt;
+        pos.y += this.casualVelocityY * dt;
+        this.player.setPosition(pos);
+
+        for (const cloud of this.casualClouds) {
+            if (cloud.kind === 'moving') {
+                const cpos = cloud.node.position.clone();
+                cpos.x += cloud.moveDir * cloud.moveSpeed * dt;
+                if (Math.abs(cpos.x - cloud.baseX) > 120) {
+                    cloud.moveDir *= -1;
+                }
+                cloud.node.setPosition(cpos);
+            }
+        }
+
+        this.checkCasualCloudLanding();
+        if (this.player.position.y > 86) {
+            const shift = this.player.position.y - 86;
+            this.player.setPosition(this.player.position.x, 86, 0);
+            for (const cloud of this.casualClouds) {
+                cloud.node.setPosition(cloud.node.position.x, cloud.node.position.y - shift, 0);
+            }
+            this.casualNextCloudY -= shift;
+        }
+        while (this.casualNextCloudY < 390) {
+            const stage = Math.floor(this.casualHighestStep / 10);
+            const kind = this.pickCasualCloudKind(stage);
+            const reach = Math.max(170, 270 - Math.min(72, stage * 9));
+            const x = Math.max(-440, Math.min(440, this.casualLastCloudX + this.randomRange(-reach, reach)));
+            this.spawnCasualCloud(x, this.casualNextCloudY, kind);
+            this.casualNextCloudY += Math.max(84, 108 - stage * 2.4) + this.randomRange(-8, 16);
+        }
+        this.casualClouds = this.casualClouds.filter((cloud) => {
+            if (cloud.node.position.y < -430 || !cloud.node.isValid) {
+                cloud.node.destroy();
+                return false;
+            }
+            return true;
+        });
+        if (this.player.position.y < -390) {
+            this.gameOver();
+            return;
+        }
+        this.updateHud();
+    }
+
+    private checkCasualCloudLanding(): void {
+        if (!this.player || this.casualVelocityY >= 0) {
+            return;
+        }
+        const px = this.player.position.x;
+        const py = this.player.position.y;
+        for (const cloud of this.casualClouds) {
+            if (cloud.used && cloud.kind === 'break') {
+                continue;
+            }
+            const cpos = cloud.node.position;
+            const top = cpos.y + cloud.height * 0.22;
+            const previousFootY = this.casualLastPlayerY - 58;
+            const currentFootY = py - 58;
+            const crossedCloudTop = previousFootY >= top && currentFootY <= top;
+            const closeEnoughVertically = currentFootY >= top - 82;
+            const inX = Math.abs(px - cpos.x) <= cloud.width * 0.58 + 28;
+            if (!crossedCloudTop || !closeEnoughVertically || !inX || cloud.node === this.casualLastBounceCloud) {
+                continue;
+            }
+            this.casualLastBounceCloud = cloud.node;
+            this.casualVelocityY = cloud.kind === 'bounce' ? this.casualJumpVelocity * 1.34 : this.casualJumpVelocity;
+            this.player.setPosition(px, top + 58, 0);
+            const reward = cloud.kind === 'bounce' ? 260 : cloud.kind === 'break' ? 210 : cloud.kind === 'moving' ? 180 : 120;
+            this.score += reward;
+            this.casualHighestStep += 1;
+            this.distance = this.casualHighestStep;
+            this.feedback?.showText(`+${reward}`, new Vec3(cpos.x, cpos.y + 48, 0), new Color(255, 152, 84, 255), 22);
+            if (cloud.kind === 'break') {
+                cloud.used = true;
+                tween(cloud.node)
+                    .to(0.12, { scale: new Vec3(0.86, 0.62, 1) })
+                    .call(() => cloud.node.destroy())
+                    .start();
+            } else if (cloud.kind === 'bounce') {
+                tween(cloud.node)
+                    .to(0.08, { scale: new Vec3(1.08, 0.86, 1) })
+                    .to(0.1, { scale: new Vec3(1, 1, 1) })
+                    .start();
+            }
+            this.audioManager?.playSfx('jump');
+            return;
+        }
+        if (this.casualLastBounceCloud && this.player.position.y - 58 > this.casualLastBounceCloud.position.y + 80) {
+            this.casualLastBounceCloud = null;
+        }
+    }
+
+    private pickCasualCloudKind(stage: number): CasualCloudKind {
+        const roll = Math.random();
+        if (stage >= 5 && roll < 0.14) return 'bounce';
+        if (stage >= 3 && roll < 0.34) return 'break';
+        if (stage >= 2 && roll < 0.58) return 'moving';
+        return 'normal';
+    }
+
+    private spawnCasualCloud(x: number, y: number, kind: CasualCloudKind): void {
+        if (!this.textures || !this.casualRoot) {
+            return;
+        }
+        const frame = kind === 'break' ? this.textures.cloudBreak : kind === 'bounce' ? this.textures.cloudBounce : this.textures.cloudNormal;
+        const width = kind === 'bounce' ? 176 : 162;
+        const height = kind === 'bounce' ? 112 : 72;
+        const node = this.makeSprite(`CasualCloud_${kind}`, this.casualRoot, frame, width, height, new Vec3(x, y, 0));
+        this.casualLastCloudX = x;
+        this.casualClouds.push({
+            node,
+            kind,
+            width,
+            height,
+            used: false,
+            moveDir: Math.random() < 0.5 ? -1 : 1,
+            moveSpeed: 58 + Math.random() * 46,
+            baseX: x,
+        });
     }
 
     private spawnWhileNeeded(): void {
@@ -624,7 +1010,9 @@ export class GameManager extends Component {
                 this.spawnCoinPattern(baseX + coinPattern.x, this.surfaceY + coinPattern.y, coinPattern.kind);
             }
             for (const power of pattern.powers ?? []) {
-                this.spawnPowerup(baseX + power.x, power.kind, power.y);
+                if (Math.random() < this.powerSpawnChance(power.kind)) {
+                    this.spawnPowerup(baseX + power.x, power.kind, power.y);
+                }
             }
             const stage = this.currentStage();
             const stageGapTrim = Math.min(140, stage * 28);
@@ -662,7 +1050,8 @@ export class GameManager extends Component {
     }
 
     private spawnCoinPattern(x: number, y: number, kind: CoinPatternKind): void {
-        const maps: Record<CoinPatternKind, number[][]> = {
+        type CoinPoint = [number, number, CoinTone?];
+        const maps: Record<CoinPatternKind, CoinPoint[]> = {
             cat: [
                 [1, 0], [4, 0],
                 [0, 1], [2, 1], [3, 1], [5, 1],
@@ -727,14 +1116,121 @@ export class GameManager extends Component {
                 [0, 3], [2, 3], [4, 3],
                 [0, 4], [1, 4], [2, 4], [3, 4], [4, 4],
             ],
+            megaCat: this.coinBitmap([
+                'BGGSSSSGGB',
+                'GGGSGGSGGG',
+                'GGGGGGGGGG',
+                'GSSGGGGSSG',
+                'GGGGSSGGGG',
+                'GSGSGGSGSG',
+                'BGSSSSSSGB',
+                'GGGSGGSGGG',
+                'GGGGSSGGGG',
+            ]),
+            giantPaw: this.coinBitmap([
+                '..GG..GG..',
+                '.GGGGGGGG.',
+                'GG..GG..GG',
+                '..GGGGGG..',
+                '.GGSSSSGG.',
+                'GGSSGGSSGG',
+                '.GGSSSSGG.',
+            ]),
+            fishboneBig: this.coinBitmap([
+                'G...G...G',
+                '.G.G.G.G.',
+                '..GGGGG..',
+                'GGSSSSSGG',
+                '..GGGGG..',
+                '.G.G.G.G.',
+                'G...G...G',
+            ]),
+            ribbon: this.coinBitmap([
+                'BGG...GGB',
+                'GSGG.GGSG',
+                'GGSSSSSGG',
+                '..GGGGG..',
+                'GGSSSSSGG',
+                'GSGG.GGSG',
+                'BGG...GGB',
+            ]),
+            one: this.coinBitmap([
+                '..S..',
+                '.SS..',
+                '..S..',
+                '..S..',
+                '..S..',
+                '.SSS.',
+            ]),
+            two: this.coinBitmap([
+                '.SSS.',
+                'S...S',
+                '...S.',
+                '..S..',
+                '.S...',
+                'SSSSS',
+            ]),
+            three: this.coinBitmap([
+                'SSSS.',
+                '....S',
+                '..SS.',
+                '....S',
+                'S...S',
+                '.SSS.',
+            ]),
+            go: this.coinBitmap([
+                '.SSS...SSS.',
+                'S.....S...S',
+                'S.SS..S...S',
+                'S..S..S...S',
+                '.SSS...SSS.',
+            ]),
         };
         const points = maps[kind];
-        const step = kind === 'bigCat' ? 34 : 38;
+        const step = kind === 'megaCat' ? 42 : (kind === 'bigCat' || kind === 'giantPaw' || kind === 'fishboneBig' || kind === 'ribbon' ? 34 : 38);
         const width = Math.max(...points.map((point) => point[0])) * step;
         const height = Math.max(...points.map((point) => point[1])) * step;
-        for (const [gridX, gridY] of points) {
-            this.spawnCollectible(x + gridX * step - width * 0.5, y - gridY * step + height * 0.5, 'coin');
+        for (const [gridX, gridY, tone] of points) {
+            this.spawnCollectible(x + gridX * step - width * 0.5, y - gridY * step + height * 0.5, 'coin', tone ?? 'gold');
         }
+    }
+
+    private coinBitmap(rows: string[]): Array<[number, number, CoinTone?]> {
+        const points: Array<[number, number, CoinTone?]> = [];
+        rows.forEach((row, y) => {
+            [...row].forEach((cell, x) => {
+                if (cell === 'G') points.push([x, y, 'gold']);
+                if (cell === 'S') points.push([x, y, 'silver']);
+                if (cell === 'B') points.push([x, y, 'bronze']);
+            });
+        });
+        return points;
+    }
+
+    private spawnIntroCoinBillboard(x: number, y: number): void {
+        const rows = [
+            '□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□',
+            '□□□□□■■■■■□□□□■■■■□□□□■□□□□□□■■■■■□□□■■■■■□□□□□',
+            '□□□□□□□□□■□□□□□□□■□□□■■□□□□□□■□□□□□□□■□□□■□□□□□',
+            '□□□□□□□□□■□□□□□□□■□□□□■□□□□□□■□□□□□□□■□□□■□□□□□',
+            '□□□□□■■■■■□□□□■■■■□□□□■□□□□□□■□■■■□□□■□□□■□□□□□',
+            '□□□□□□□□□■□□□□■□□□□□□□■□□□□□□■□□□■□□□■□□□■□□□□□',
+            '□□□□□□□□□■□□□□■□□□□□□□■□□□□□□■□□□■□□□■□□□■□□□□□',
+            '□□□□□■■■■■□□□□■■■■■□□■■■□□□□□■■■■■□□□■■■■■□□□□□',
+            '□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□□',
+        ];
+        const step = 30;
+        const width = rows[0].length * step;
+        const height = rows.length * step;
+        rows.forEach((row, rowIndex) => {
+            [...row].forEach((cell, colIndex) => {
+                if (cell !== '□' && cell !== '■') {
+                    return;
+                }
+                const tone: CoinTone = cell === '■' ? 'silver' : 'gold';
+                this.spawnCollectible(x + colIndex * step - width * 0.5, y - rowIndex * step + height * 0.5, 'coin', tone);
+            });
+        });
     }
 
     private spawnPowerup(x: number, kind: CollectibleKind, yFromGround: number): void {
@@ -744,13 +1240,27 @@ export class GameManager extends Component {
         this.spawnCollectible(x, this.surfaceY + yFromGround, kind);
     }
 
-    private spawnCollectible(x: number, y: number, kind: CollectibleKind): void {
+    private powerSpawnChance(kind: CollectibleKind): number {
+        if (kind === 'coin') {
+            return 1;
+        }
+        const stageBonus = Math.min(0.14, this.currentStage() * 0.018);
+        if (kind === 'dash') return 0.24 + stageBonus;
+        if (kind === 'shield') return 0.26 + stageBonus;
+        if (kind === 'score') return 0.28 + stageBonus;
+        return 0.24 + stageBonus;
+    }
+
+    private spawnCollectible(x: number, y: number, kind: CollectibleKind, tone: CoinTone = 'gold'): void {
         if (!this.textures || !this.itemRoot) {
             return;
         }
         const frame = this.frameForCollectible(kind);
         const size = kind === 'coin' ? 32 : 44;
         const node = this.makeSprite(kind === 'coin' ? 'Coin' : `Power_${kind}`, this.itemRoot, frame, size, size, new Vec3(x, y, 0));
+        if (kind === 'coin') {
+            this.applyCoinTone(node, tone);
+        }
         const collectible = node.addComponent(Collectible);
         collectible.kind = kind;
         collectible.value = kind === 'coin' ? 1 : 0;
@@ -758,6 +1268,20 @@ export class GameManager extends Component {
         this.collectibles.push(collectible);
         if (kind !== 'coin') {
             node.angle = Math.random() * 8 - 4;
+        }
+    }
+
+    private applyCoinTone(node: Node, tone: CoinTone): void {
+        const sprite = node.getComponent(Sprite);
+        if (!sprite) {
+            return;
+        }
+        if (tone === 'silver') {
+            sprite.color = new Color(210, 232, 242, 255);
+        } else if (tone === 'bronze') {
+            sprite.color = new Color(214, 143, 76, 255);
+        } else {
+            sprite.color = new Color(255, 231, 104, 255);
         }
     }
 
@@ -838,7 +1362,7 @@ export class GameManager extends Component {
                 this.comboTimer = 2.2;
                 this.dodges += 1;
                 this.score += 80 * this.currentMultiplier();
-                this.feedback?.showText('\u5b8c\u7f8e\u8d8a\u8fc7 +80', new Vec3(this.playerX + 30, this.playerGroundY + 116, 0), new Color(255, 152, 84, 255), 24);
+                this.feedback?.showText(this.t('\u5b8c\u7f8e\u8d8a\u8fc7 +80', 'Clean dodge +80'), new Vec3(this.playerX + 30, this.playerGroundY + 116, 0), new Color(255, 152, 84, 255), 24);
                 continue;
             }
             if (!playerBox.intersects(obstacle.getHitBox())) {
@@ -850,7 +1374,7 @@ export class GameManager extends Component {
             if (this.powers.dash > 0) {
                 this.score += 180 * this.currentMultiplier();
                 obstacle.node.active = false;
-                this.feedback?.showText('\u51b2\u7834\u969c\u788d +180', obstacle.node.position.clone().add(new Vec3(0, 60, 0)), new Color(113, 142, 236, 255), 24);
+                this.feedback?.showText(this.t('\u51b2\u7834\u969c\u788d +180', 'Dash break +180'), obstacle.node.position.clone().add(new Vec3(0, 60, 0)), new Color(113, 142, 236, 255), 24);
                 continue;
             }
             if (this.powers.shield > 0) {
@@ -859,7 +1383,7 @@ export class GameManager extends Component {
                 obstacle.node.active = false;
                 this.flashPlayer();
                 this.feedback?.shake(this.worldRoot, 8);
-                this.feedback?.showText('\u62a4\u76fe\u62b5\u6321', obstacle.node.position.clone().add(new Vec3(0, 60, 0)), new Color(74, 145, 226, 255), 26);
+                this.feedback?.showText(this.t('\u62a4\u76fe\u62b5\u6321', 'Shield block'), obstacle.node.position.clone().add(new Vec3(0, 60, 0)), new Color(74, 145, 226, 255), 26);
                 continue;
             }
             this.offerRevive();
@@ -909,7 +1433,9 @@ export class GameManager extends Component {
         };
         this.drawMissileWarning(threat, 0);
         this.missiles.push(threat);
-        this.feedback?.showText('\u5bfc\u5f39\u9884\u8b66\uff01', new Vec3(260, y + 28, 0), new Color(230, 92, 62, 255), 24);
+        if (this.saveData.settings.assistHints) {
+            this.feedback?.showText(this.t('\u5bfc\u5f39\u9884\u8b66\uff01', 'Missile incoming!'), new Vec3(260, y + 28, 0), new Color(230, 92, 62, 255), 24);
+        }
     }
 
     private updateMissiles(dt: number): void {
@@ -1005,19 +1531,21 @@ export class GameManager extends Component {
             missile.hit = true;
             if (this.powers.dash > 0) {
                 this.score += 220 * this.currentMultiplier();
+                this.missileBlocks += 1;
                 missile.missileNode.active = false;
                 missile.trailNode?.destroy();
-                this.feedback?.showText('\u51b2\u6563\u5bfc\u5f39 +220', missile.missileNode.position.clone().add(new Vec3(0, 48, 0)), new Color(113, 142, 236, 255), 24);
+                this.feedback?.showText(this.t('\u51b2\u6563\u5bfc\u5f39 +220', 'Missile dashed +220'), missile.missileNode.position.clone().add(new Vec3(0, 48, 0)), new Color(113, 142, 236, 255), 24);
                 continue;
             }
             if (this.powers.shield > 0) {
                 this.powers.shield = 0;
                 this.shieldBlocks += 1;
+                this.missileBlocks += 1;
                 missile.missileNode.active = false;
                 missile.trailNode?.destroy();
                 this.flashPlayer();
                 this.feedback?.shake(this.worldRoot, 10);
-                this.feedback?.showText('\u62a4\u76fe\u6321\u4e0b\u5bfc\u5f39', missile.missileNode.position.clone().add(new Vec3(0, 52, 0)), new Color(74, 145, 226, 255), 26);
+                this.feedback?.showText(this.t('\u62a4\u76fe\u6321\u4e0b\u5bfc\u5f39', 'Shield stopped missile'), missile.missileNode.position.clone().add(new Vec3(0, 52, 0)), new Color(74, 145, 226, 255), 26);
                 continue;
             }
             this.feedback?.shake(this.worldRoot, 12);
@@ -1036,6 +1564,14 @@ export class GameManager extends Component {
     }
 
     private offerRevive(): void {
+        if (this.saveData.inventory.reviveTicket > 0 && !this.reviveUsed) {
+            this.saveData.inventory.reviveTicket -= 1;
+            this.reviveUsed = true;
+            this.saveGame();
+            this.feedback?.showText(this.t('\u590d\u6d3b\u5238\u751f\u6548\uff01', 'Revive ticket used!'), new Vec3(0, 24, 0), new Color(255, 152, 84, 255), 30);
+            this.reviveFromTicket();
+            return;
+        }
         if (this.reviveUsed) {
             this.gameOver();
             return;
@@ -1044,7 +1580,18 @@ export class GameManager extends Component {
         this.state = 'revive';
         this.hud?.setRevive();
         this.feedback?.shake(this.worldRoot, 8);
-        this.feedback?.showText('\u8981\u590d\u6d3b\u5417\uff1f', new Vec3(0, 24, 0), new Color(255, 152, 84, 255), 30);
+        this.feedback?.showText(this.t('\u8981\u590d\u6d3b\u5417\uff1f', 'Revive?'), new Vec3(0, 24, 0), new Color(255, 152, 84, 255), 30);
+    }
+
+    private reviveFromTicket(): void {
+        this.state = 'playing';
+        this.clearDangerAroundPlayer();
+        this.powers.shield = Math.max(this.powers.shield, 4.5);
+        this.comboTimer = 1.4;
+        this.hud?.setPlaying();
+        this.flashPlayer();
+        this.updatePowerEffects(0);
+        this.audioManager?.playSfx('powerup');
     }
 
     private reviveFromAd(): void {
@@ -1058,7 +1605,7 @@ export class GameManager extends Component {
         this.hud?.setPlaying();
         this.flashPlayer();
         this.updatePowerEffects(0);
-        this.feedback?.showText('\u590d\u6d3b\u6210\u529f\uff01', new Vec3(this.playerX + 70, this.playerGroundY + 120, 0), new Color(74, 145, 226, 255), 28);
+        this.feedback?.showText(this.t('\u590d\u6d3b\u6210\u529f\uff01', 'Revived!'), new Vec3(this.playerX + 70, this.playerGroundY + 120, 0), new Color(74, 145, 226, 255), 28);
         this.audioManager?.playSfx('powerup');
     }
 
@@ -1228,14 +1775,22 @@ export class GameManager extends Component {
 
     private onKeyDown(event: EventKeyboard): void {
         if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.KEY_W || event.keyCode === KeyCode.ARROW_UP) {
+            const wasJumpHeld = this.spaceHeld;
             this.spaceHeld = true;
-            if (this.state === 'playing') {
+            if (this.state === 'playing' && !wasJumpHeld) {
                 if (this.runner?.isAirborne) {
-                    this.runner.startGlide();
+                    this.jumpIntentTimer = this.jumpIntentDelay;
                 } else {
+                    this.jumpIntentTimer = -1;
                     this.runner?.jump();
                 }
             }
+        }
+        if (event.keyCode === KeyCode.ARROW_LEFT || event.keyCode === KeyCode.KEY_A) {
+            this.casualInputX = -1;
+        }
+        if (event.keyCode === KeyCode.ARROW_RIGHT || event.keyCode === KeyCode.KEY_D) {
+            this.casualInputX = 1;
         }
         if (event.keyCode === KeyCode.ARROW_DOWN || event.keyCode === KeyCode.KEY_S) {
             if (this.state === 'playing') {
@@ -1243,17 +1798,17 @@ export class GameManager extends Component {
             }
         }
         if (event.keyCode === KeyCode.KEY_P) {
-            if (this.state === 'playing') {
+            if (this.state === 'playing' || this.state === 'casual') {
                 this.pauseRun();
             } else if (this.state === 'pause') {
                 this.resumeRun();
             }
         }
-        if (event.keyCode === KeyCode.ENTER && this.state !== 'playing' && this.state !== 'pause') {
+        if (event.keyCode === KeyCode.ENTER && this.state !== 'playing' && this.state !== 'casual' && this.state !== 'pause') {
             this.startRun();
         }
         if (event.keyCode === KeyCode.ESCAPE) {
-            if (this.state === 'settings' || this.state === 'upgrade') {
+            if (this.state === 'settings' || this.state === 'upgrade' || this.state === 'achievements') {
                 this.showMenu();
             } else if (this.state === 'pause') {
                 this.resumeRun();
@@ -1264,7 +1819,20 @@ export class GameManager extends Component {
     private onKeyUp(event: EventKeyboard): void {
         if (event.keyCode === KeyCode.SPACE || event.keyCode === KeyCode.KEY_W || event.keyCode === KeyCode.ARROW_UP) {
             this.spaceHeld = false;
+            if (this.state === 'playing' && this.jumpIntentTimer >= 0) {
+                this.jumpIntentTimer = -1;
+                if (this.runner?.isAirborne && this.runner.canDoubleJump()) {
+                    this.runner.jump();
+                    return;
+                }
+            }
             this.runner?.stopGlide();
+        }
+        if ((event.keyCode === KeyCode.ARROW_LEFT || event.keyCode === KeyCode.KEY_A) && this.casualInputX < 0) {
+            this.casualInputX = 0;
+        }
+        if ((event.keyCode === KeyCode.ARROW_RIGHT || event.keyCode === KeyCode.KEY_D) && this.casualInputX > 0) {
+            this.casualInputX = 0;
         }
         if (event.keyCode === KeyCode.ARROW_DOWN || event.keyCode === KeyCode.KEY_S) {
             this.runner?.stopSlide();
@@ -1272,11 +1840,13 @@ export class GameManager extends Component {
     }
 
     private onPressStart(): void {
+        const wasTouchHeld = this.touchHeld;
         this.touchHeld = true;
-        if (this.state === 'playing') {
+        if (this.state === 'playing' && !wasTouchHeld) {
             if (this.runner?.isAirborne) {
-                this.runner.startGlide();
+                this.touchJumpIntentTimer = this.jumpIntentDelay;
             } else {
+                this.touchJumpIntentTimer = -1;
                 this.runner?.jump();
             }
         }
@@ -1284,12 +1854,32 @@ export class GameManager extends Component {
 
     private onPressEnd(): void {
         this.touchHeld = false;
+        if (this.state === 'playing' && this.touchJumpIntentTimer >= 0) {
+            this.touchJumpIntentTimer = -1;
+            if (this.runner?.isAirborne && this.runner.canDoubleJump()) {
+                this.runner.jump();
+                return;
+            }
+        }
         this.runner?.stopGlide();
     }
 
     private onStartPressed(): void { this.startRun(); }
+    private onCasualPressed(): void { this.startCasualMode(); }
+    private onRetryPressed(): void {
+        if (this.lastRunMode === 'casual') {
+            this.startCasualMode();
+            return;
+        }
+        this.startRun();
+    }
     private onSettingsPressed(): void { this.showSettings(); }
     private onUpgradePressed(): void { this.showUpgrade(); }
+    private onAchievementsPressed(): void { this.showAchievements(); }
+    private onShopTabPressed(tab: ShopTab): void {
+        this.shopTab = tab;
+        this.showUpgrade();
+    }
     private onLeaderboardPressed(): void {
         const currentEntry = this.state === 'gameover' ? this.latestLeaderboardEntry : null;
         this.hud?.setLeaderboard(this.leaderboardView(10, currentEntry));
@@ -1301,6 +1891,105 @@ export class GameManager extends Component {
     private onContinuePressed(): void { this.resumeRun(); }
     private onMenuPressed(): void { this.showMenu(); }
     private onBackPressed(): void { this.showMenu(); }
+    private onSettingsLanguagePressed(): void {
+        this.saveData.settings.language = this.saveData.settings.language === 'zh' ? 'en' : 'zh';
+        this.saveGame();
+        this.applySettings();
+        this.feedback?.showText(this.t('\u8bed\u8a00\u5df2\u5207\u6362', 'Language switched'), new Vec3(0, -132, 0), new Color(106, 166, 214, 255), 24);
+    }
+
+    private onSettingsAssistPressed(): void {
+        this.saveData.settings.assistHints = !this.saveData.settings.assistHints;
+        this.saveGame();
+        this.hud?.updateSettings(this.settingsView());
+        this.feedback?.showText(this.saveData.settings.assistHints ? this.t('\u8f85\u52a9\u63d0\u793a\u5df2\u5f00\u542f', 'Assist hints on') : this.t('\u8f85\u52a9\u63d0\u793a\u5df2\u5173\u95ed', 'Assist hints off'), new Vec3(0, -132, 0), new Color(106, 166, 214, 255), 24);
+    }
+
+    private onSettingsResetSavePressed(): void {
+        const settings = { ...this.saveData.settings };
+        this.saveData = {
+            ...DEFAULT_SAVE,
+            upgrades: { ...DEFAULT_UPGRADES },
+            inventory: { ...DEFAULT_INVENTORY },
+            unlockedSkins: ['classic'],
+            leaderboard: [],
+            achievements: {},
+            settings,
+        };
+        this.latestLeaderboardEntry = null;
+        this.applySelectedSkin();
+        this.saveGame();
+        this.hud?.updateSettings(this.settingsView());
+        this.hud?.setMenu(this.saveView(), this.skinViews());
+        this.showSettings();
+        this.feedback?.showText(this.t('\u5b58\u6863\u5df2\u91cd\u7f6e', 'Save reset'), new Vec3(0, -132, 0), new Color(219, 102, 64, 255), 24);
+    }
+
+    private onSettingsResetRankPressed(): void {
+        this.saveData.leaderboard = [];
+        this.latestLeaderboardEntry = null;
+        this.saveGame();
+        this.hud?.updateSettings(this.settingsView());
+        this.feedback?.showText(this.t('\u6392\u884c\u699c\u5df2\u6e05\u7a7a', 'Ranking cleared'), new Vec3(0, -132, 0), new Color(219, 102, 64, 255), 24);
+    }
+
+    private adjustBgmVolume(delta: number): void {
+        this.setBgmVolume(this.saveData.settings.bgmVolume + delta);
+    }
+
+    private adjustSfxVolume(delta: number): void {
+        this.setSfxVolume(this.saveData.settings.sfxVolume + delta);
+        this.audioManager?.playSfx('coin');
+    }
+
+    private applySettings(): void {
+        this.audioManager?.setBgmVolume(this.saveData.settings.bgmVolume);
+        this.audioManager?.setSfxVolume(this.saveData.settings.sfxVolume);
+        this.hud?.updateSettings(this.settingsView());
+    }
+
+    private settingsView(): SettingsView {
+        return {
+            language: this.saveData.settings.language,
+            bgmVolume: this.saveData.settings.bgmVolume,
+            sfxVolume: this.saveData.settings.sfxVolume,
+            assistHints: this.saveData.settings.assistHints,
+        };
+    }
+
+    private t(zh: string, en: string): string {
+        return this.saveData.settings.language === 'zh' ? zh : en;
+    }
+
+    private clamp01(value: unknown): number {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return 0;
+        }
+        return Math.max(0, Math.min(1, numeric));
+    }
+
+    private applyStartConsumables(): void {
+        let consumed = false;
+        if (this.saveData.inventory.startDash > 0) {
+            this.saveData.inventory.startDash -= 1;
+            const dashDuration = 6.6;
+            this.powers.dash = Math.max(this.powers.dash, dashDuration);
+            this.powers.magnet = Math.max(this.powers.magnet, dashDuration);
+            this.feedback?.showText(this.t('\u5f00\u5c40\u51b2\u523a 200m\uff01', 'Start dash 200m!'), new Vec3(0, 72, 0), new Color(113, 142, 236, 255), 26);
+            consumed = true;
+        }
+        if (this.saveData.inventory.startShield > 0) {
+            this.saveData.inventory.startShield -= 1;
+            this.powers.shield = Math.max(this.powers.shield, 5.8);
+            this.feedback?.showText(this.t('\u5f00\u5c40\u62a4\u76fe\u5df2\u751f\u6548', 'Start shield active'), new Vec3(0, 110, 0), new Color(74, 145, 226, 255), 24);
+            consumed = true;
+        }
+        if (consumed) {
+            this.saveGame();
+            this.updatePowerEffects(0);
+        }
+    }
 
     private buyUpgrade(kind: PowerKind): void {
         if (this.state !== 'upgrade') {
@@ -1308,19 +1997,35 @@ export class GameManager extends Component {
         }
         const level = this.saveData.upgrades[kind];
         if (level >= MAX_UPGRADE_LEVEL) {
-            this.feedback?.showText('\u5df2\u6ee1\u7ea7', new Vec3(0, -120, 0), new Color(106, 166, 214, 255), 28);
+            this.feedback?.showText(this.t('\u5df2\u6ee1\u7ea7', 'Max level'), new Vec3(0, -120, 0), new Color(106, 166, 214, 255), 28);
             return;
         }
         const cost = this.upgradeCost(kind);
         if (this.saveData.totalCoins < cost) {
-            this.feedback?.showText('\u91d1\u5e01\u4e0d\u8db3', new Vec3(0, -120, 0), new Color(219, 102, 64, 255), 28);
+            this.feedback?.showText(this.t('\u91d1\u5e01\u4e0d\u8db3', 'Not enough coins'), new Vec3(0, -120, 0), new Color(219, 102, 64, 255), 28);
             return;
         }
         this.saveData.totalCoins -= cost;
         this.saveData.upgrades[kind] += 1;
         this.saveGame();
         this.feedback?.showText(`${this.powerName(kind)} Lv.${this.saveData.upgrades[kind]}`, new Vec3(0, -120, 0), new Color(255, 152, 84, 255), 28);
-        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts());
+        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts(), this.consumableViews(), this.shopTab);
+    }
+
+    private buyConsumable(kind: ConsumableKind): void {
+        if (this.state !== 'upgrade') {
+            return;
+        }
+        const cost = CONSUMABLE_COSTS[kind];
+        if (this.saveData.totalCoins < cost) {
+            this.feedback?.showText(this.t('\u91d1\u5e01\u4e0d\u8db3', 'Not enough coins'), new Vec3(0, -120, 0), new Color(219, 102, 64, 255), 28);
+            return;
+        }
+        this.saveData.totalCoins -= cost;
+        this.saveData.inventory[kind] += 1;
+        this.saveGame();
+        this.feedback?.showText(`${this.consumableLabel(kind)} +1`, new Vec3(0, -120, 0), new Color(255, 152, 84, 255), 28);
+        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts(), this.consumableViews(), this.shopTab);
     }
 
     private selectSkin(id: SkinId): void {
@@ -1333,7 +2038,7 @@ export class GameManager extends Component {
         }
         if (this.saveData.unlockedSkins.indexOf(id) < 0) {
             if (this.saveData.totalCoins < skin.cost) {
-                this.feedback?.showText('\u91d1\u5e01\u4e0d\u8db3', new Vec3(0, -120, 0), new Color(219, 102, 64, 255), 28);
+                this.feedback?.showText(this.t('\u91d1\u5e01\u4e0d\u8db3', 'Not enough coins'), new Vec3(0, -120, 0), new Color(219, 102, 64, 255), 28);
                 return;
             }
             this.saveData.totalCoins -= skin.cost;
@@ -1342,8 +2047,8 @@ export class GameManager extends Component {
         this.saveData.selectedSkin = id;
         this.applySelectedSkin();
         this.saveGame();
-        this.feedback?.showText('\u76ae\u80a4\u5df2\u5207\u6362', new Vec3(0, -120, 0), new Color(255, 152, 84, 255), 28);
-        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts());
+        this.feedback?.showText(this.t('\u76ae\u80a4\u5df2\u5207\u6362', 'Skin changed'), new Vec3(0, -120, 0), new Color(255, 152, 84, 255), 28);
+        this.hud?.setUpgrade(this.saveView(), this.skinViews(), this.upgradeCosts(), this.consumableViews(), this.shopTab);
     }
 
     private applySelectedSkin(): void {
@@ -1376,10 +2081,10 @@ export class GameManager extends Component {
 
     private powerDuration(kind: PowerKind): number {
         const level = this.saveData.upgrades[kind];
-        if (kind === 'magnet') return 8 + level * 1.7;
-        if (kind === 'shield') return 8 + level * 1.6;
-        if (kind === 'score') return 8 + level * 1.35;
-        return 2.7 + level * 0.42;
+        if (kind === 'magnet') return 4.8 + level * 0.85;
+        if (kind === 'shield') return 4.6 + level * 0.8;
+        if (kind === 'score') return 4.8 + level * 0.72;
+        return 1.9 + level * 0.28;
     }
 
     private powerMaxState(): PowerState {
@@ -1393,9 +2098,9 @@ export class GameManager extends Component {
 
     private powerName(kind: CollectibleKind): string {
         if (kind === 'coin') {
-            return '\u91d1\u5e01';
+            return this.t('\u91d1\u5e01', 'Coin');
         }
-        return POWER_NAMES[kind];
+        return this.saveData.settings.language === 'zh' ? POWER_NAMES[kind] : POWER_NAMES_EN[kind];
     }
 
     private powerColor(kind: PowerKind): Color {
@@ -1425,23 +2130,57 @@ export class GameManager extends Component {
     private saveView(): HudSaveView {
         return {
             totalCoins: this.saveData.totalCoins,
+            totalStars: this.saveData.totalStars,
             bestScore: this.saveData.bestScore,
             bestScoreToday: this.todayBestScore(),
             selectedSkin: this.saveData.selectedSkin,
             upgrades: { ...this.saveData.upgrades },
+            inventory: { ...this.saveData.inventory },
         };
+    }
+
+    private consumableViews(): ConsumableShopView[] {
+        return (Object.keys(DEFAULT_INVENTORY) as ConsumableKind[]).map((id) => ({
+            id,
+            label: this.consumableLabel(id),
+            description: this.consumableDescription(id),
+            cost: CONSUMABLE_COSTS[id],
+            count: this.saveData.inventory[id],
+        }));
+    }
+
+    private consumableLabel(id: ConsumableKind): string {
+        if (id === 'startDash') return this.t('\u5f00\u5c40\u51b2\u523a', 'Start Dash');
+        if (id === 'reviveTicket') return this.t('\u590d\u6d3b\u5238', 'Revive Ticket');
+        return this.t('\u5f00\u5c40\u62a4\u76fe', 'Start Shield');
+    }
+
+    private consumableDescription(id: ConsumableKind): string {
+        if (id === 'startDash') return this.t('\u77ed\u7a0b\u51b2\u523a+\u78c1\u94c1', 'Short dash + magnet');
+        if (id === 'reviveTicket') return this.t('\u5c40\u5185\u81ea\u52a8\u590d\u6d3b', 'Auto revive');
+        return this.t('\u5f00\u5c40\u62a4\u4f53', 'Shield at start');
     }
 
     private skinViews(): SkinView[] {
         return SKINS.map((skin) => ({
             id: skin.id,
-            label: skin.label,
-            shortLabel: skin.shortLabel,
+            label: this.skinLabel(skin.id, false),
+            shortLabel: this.skinLabel(skin.id, true),
             selected: this.saveData.selectedSkin === skin.id,
             unlocked: this.saveData.unlockedSkins.indexOf(skin.id) >= 0,
             cost: skin.cost,
             preview: this.textures.runnerSkins[skin.id].preview,
         }));
+    }
+
+    private skinLabel(id: SkinId, short: boolean): string {
+        if (this.saveData.settings.language === 'zh') {
+            const skin = SKINS.find((item) => item.id === id);
+            return short ? skin?.shortLabel ?? id : skin?.label ?? id;
+        }
+        if (id === 'berry') return short ? 'Berry' : 'Berry Hakimi';
+        if (id === 'mint') return short ? 'Mint' : 'Mint Pilot Hakimi';
+        return short ? 'Classic' : 'Classic Hakimi';
     }
 
     private missionText(): string {
@@ -1456,7 +2195,7 @@ export class GameManager extends Component {
         return MISSION_DEFS.map((mission) => {
             const current = this.missionCurrent(mission.id);
             return {
-                label: mission.label,
+                label: this.missionLabel(mission.id),
                 current,
                 target: mission.target,
                 reward: mission.reward,
@@ -1471,22 +2210,119 @@ export class GameManager extends Component {
         return this.dodges;
     }
 
+    private achievementViews(): AchievementEntryView[] {
+        return ACHIEVEMENT_DEFS.map((achievement) => ({
+            id: achievement.id,
+            label: this.achievementLabel(achievement.id),
+            description: this.achievementDescription(achievement.id),
+            stars: achievement.reward,
+            completed: this.saveData.achievements[achievement.id] === true,
+        }));
+    }
+
     private unlockedAchievements(finalScore: number, projectedCoins: number): Array<AchievementView & { id: AchievementId }> {
         const unlocked: Array<AchievementView & { id: AchievementId }> = [];
         for (const achievement of ACHIEVEMENT_DEFS) {
             if (this.saveData.achievements[achievement.id] || !this.isAchievementDone(achievement.id, finalScore, projectedCoins)) {
                 continue;
             }
-            unlocked.push({ id: achievement.id, label: achievement.label, reward: achievement.reward });
+            unlocked.push({ id: achievement.id, label: this.achievementLabel(achievement.id), reward: achievement.reward });
         }
         return unlocked;
     }
 
+    private checkAchievementsNow(projectedCoins = this.saveData.totalCoins + this.runCoins, includeRunEndAchievements = false): void {
+        const score = Math.floor(this.score);
+        for (const achievement of ACHIEVEMENT_DEFS) {
+            if (!includeRunEndAchievements && achievement.id === 'firstRun') {
+                continue;
+            }
+            if (this.saveData.achievements[achievement.id] || !this.isAchievementDone(achievement.id, score, projectedCoins)) {
+                continue;
+            }
+            this.unlockAchievement(achievement.id);
+        }
+    }
+
+    private unlockAchievement(id: AchievementId): void {
+        if (this.saveData.achievements[id]) {
+            return;
+        }
+        const definition = ACHIEVEMENT_DEFS.find((achievement) => achievement.id === id);
+        if (!definition) {
+            return;
+        }
+        const view: AchievementView = {
+            id,
+            label: this.achievementLabel(id),
+            reward: definition.reward,
+            icon: this.textures?.achievementIcons[ACHIEVEMENT_DEFS.findIndex((achievement) => achievement.id === id)],
+        };
+        this.saveData.achievements[id] = true;
+        this.saveData.totalStars += definition.reward;
+        this.hud?.showAchievementNotice(view);
+        this.saveGame();
+    }
+
+    private missionLabel(id: MissionId): string {
+        if (id === 'coins') return this.t('\u91d1\u5e01', 'Coins');
+        if (id === 'distance') return this.t('\u91cc\u7a0b', 'Distance');
+        return this.t('\u8d8a\u8fc7', 'Dodges');
+    }
+
+    private achievementLabel(id: AchievementId): string {
+        if (id === 'firstRun') return this.t('\u521d\u6b21\u51fa\u53d1', 'First Run');
+        if (id === 'first1k') return this.t('\u9996\u6b21 1000m', 'First 1000m');
+        if (id === 'first3k') return this.t('\u8fdc\u884c\u732b\u732b', 'Long Trip');
+        if (id === 'coinCollector') return this.t('\u7d2f\u8ba1 500 \u91d1\u5e01', 'Collect 500 coins');
+        if (id === 'coinTycoon') return this.t('\u91d1\u5e01\u5c0f\u5bcc\u8c6a', 'Coin Tycoon');
+        if (id === 'combo20') return this.t('\u5355\u5c40 20 \u8fde\u51fb', '20 combo in one run');
+        if (id === 'combo50') return this.t('\u5355\u5c40 50 \u8fde\u51fb', '50 combo in one run');
+        if (id === 'shieldGuard') return this.t('\u62a4\u76fe\u62b5\u6321 3 \u6b21', 'Block 3 hits with shield');
+        if (id === 'missileGuard') return this.t('\u5bfc\u5f39\u514b\u661f', 'Missile Guard');
+        if (id === 'skinCollector') return this.t('\u8863\u6a71\u6536\u85cf', 'Skin Collector');
+        if (id === 'upgradeNovice') return this.t('\u9053\u5177\u65b0\u624b', 'Upgrade Novice');
+        if (id === 'upgradeMaster') return this.t('\u9053\u5177\u5927\u5e08', 'Upgrade Master');
+        if (id === 'missionRunner') return this.t('\u4efb\u52a1\u8fbe\u4eba', 'Mission Runner');
+        return this.t('\u6ed1\u7fd4\u9ad8\u624b', 'Glide Master');
+    }
+
+    private achievementDescription(id: AchievementId): string {
+        const def = ACHIEVEMENT_DEFS.find((item) => item.id === id);
+        if (this.saveData.settings.language === 'zh') {
+            return def?.description ?? '';
+        }
+        if (id === 'firstRun') return 'Finish any run';
+        if (id === 'first1k') return 'Reach 1000m in one run';
+        if (id === 'first3k') return 'Reach 3000m in one run';
+        if (id === 'coinCollector') return 'Hold 500 coins';
+        if (id === 'coinTycoon') return 'Hold 1500 coins';
+        if (id === 'combo20') return 'Reach 20 combo';
+        if (id === 'combo50') return 'Reach 50 combo';
+        if (id === 'shieldGuard') return 'Block 3 hits in one run';
+        if (id === 'missileGuard') return 'Block or dash through a missile';
+        if (id === 'skinCollector') return 'Unlock 3 skins';
+        if (id === 'upgradeNovice') return 'Upgrade any power to Lv.3';
+        if (id === 'upgradeMaster') return 'Upgrade all powers to Lv.5';
+        if (id === 'missionRunner') return 'Complete 10 missions';
+        return 'Reach 1800m in one run';
+    }
+
     private isAchievementDone(id: AchievementId, finalScore: number, projectedCoins: number): boolean {
+        if (id === 'firstRun') return finalScore > 0;
         if (id === 'first1k') return this.distance >= 1000;
+        if (id === 'first3k') return this.distance >= 3000;
         if (id === 'coinCollector') return projectedCoins >= 500;
+        if (id === 'coinTycoon') return projectedCoins >= 1500;
         if (id === 'combo20') return this.maxCombo >= 20 || finalScore >= 5000;
-        return this.shieldBlocks >= 3;
+        if (id === 'combo50') return this.maxCombo >= 50 || finalScore >= 16000;
+        if (id === 'shieldGuard') return this.shieldBlocks >= 3;
+        if (id === 'missileGuard') return this.missileBlocks > 0;
+        if (id === 'skinCollector') return this.saveData.unlockedSkins.length >= 3;
+        if (id === 'upgradeNovice') return POWER_KINDS.some((kind) => this.saveData.upgrades[kind] >= 3);
+        if (id === 'upgradeMaster') return POWER_KINDS.every((kind) => this.saveData.upgrades[kind] >= MAX_UPGRADE_LEVEL);
+        if (id === 'missionRunner') return this.saveData.missionsCompleted >= 10;
+        return this.distance >= 1800;
     }
 
     private recordLeaderboard(score: number): number {
@@ -1566,6 +2402,9 @@ export class GameManager extends Component {
             bestScoreToday: Math.max(0, Math.floor(Number(parsed?.bestScoreToday ?? 0))),
             bestScoreDate: typeof parsed?.bestScoreDate === 'string' ? parsed.bestScoreDate : '',
             totalCoins: Math.max(0, Math.floor(Number(parsed?.totalCoins ?? 0))),
+            totalStars: Math.max(0, Math.floor(Number(parsed?.totalStars ?? 0))),
+            totalRuns: Math.max(0, Math.floor(Number(parsed?.totalRuns ?? 0))),
+            totalDistance: Math.max(0, Math.floor(Number(parsed?.totalDistance ?? 0))),
             selectedSkin: unlocked.indexOf(selected) >= 0 ? selected : 'classic',
             unlockedSkins: unlocked,
             upgrades: {
@@ -1574,9 +2413,31 @@ export class GameManager extends Component {
                 score: this.saneLevel(parsed?.upgrades?.score),
                 dash: this.saneLevel(parsed?.upgrades?.dash),
             },
+            inventory: this.saneInventory(parsed?.inventory),
             missionsCompleted: Math.max(0, Math.floor(Number(parsed?.missionsCompleted ?? 0))),
             leaderboard: this.saneLeaderboard(parsed?.leaderboard),
             achievements: this.saneAchievements(parsed?.achievements),
+            settings: this.saneSettings(parsed?.settings),
+        };
+    }
+
+    private saneSettings(value: unknown): GameSettings {
+        const source = typeof value === 'object' && value !== null ? value as Partial<GameSettings> : {};
+        const language: Language = source.language === 'en' ? 'en' : 'zh';
+        return {
+            language,
+            bgmVolume: this.clamp01(source.bgmVolume ?? DEFAULT_SETTINGS.bgmVolume),
+            sfxVolume: this.clamp01(source.sfxVolume ?? DEFAULT_SETTINGS.sfxVolume),
+            assistHints: typeof source.assistHints === 'boolean' ? source.assistHints : DEFAULT_SETTINGS.assistHints,
+        };
+    }
+
+    private saneInventory(value: unknown): ConsumableInventory {
+        const source = typeof value === 'object' && value !== null ? value as Partial<ConsumableInventory> : {};
+        return {
+            startDash: Math.max(0, Math.floor(Number(source.startDash ?? 0))),
+            reviveTicket: Math.max(0, Math.floor(Number(source.reviveTicket ?? 0))),
+            startShield: Math.max(0, Math.floor(Number(source.startShield ?? 0))),
         };
     }
 
@@ -1629,6 +2490,7 @@ export class GameManager extends Component {
             shield,
             scoreStar,
             dash,
+            reviveTicket,
             magnetFx,
             shieldFx,
             scoreFx,
@@ -1646,6 +2508,23 @@ export class GameManager extends Component {
             badge,
             logo,
             pauseIcon,
+            achievementStar,
+            resultBg,
+            resultPanel,
+            resultScore,
+            resultCoin,
+            resultDistance,
+            resultBest,
+            menuBestPanel,
+            hudStatsPanel,
+            shopPanel,
+            achievementPanel,
+            settingsPanel,
+            pausePanel,
+            leaderboardPanel,
+            cloudNormal,
+            cloudBreak,
+            cloudBounce,
             uiFont,
         ] = await Promise.all([
             this.loadSpriteFrame('textures/world/seamless_bg'),
@@ -1664,6 +2543,7 @@ export class GameManager extends Component {
             this.loadSpriteFrame('textures/items/shield'),
             this.loadSpriteFrame('textures/items/score_star'),
             this.loadSpriteFrame('textures/items/dash'),
+            this.loadSpriteFrame('textures/items/revive_ticket'),
             this.loadSpriteFrame('textures/items/magnet_fx'),
             this.loadSpriteFrame('textures/items/shield_fx'),
             this.loadSpriteFrame('textures/items/score_fx'),
@@ -1681,7 +2561,24 @@ export class GameManager extends Component {
             this.loadSpriteFrame('textures/ui/badge'),
             this.loadSpriteFrame('textures/ui/main_logo'),
             this.loadSpriteFrame('textures/ui/pause_icon'),
-            this.loadFont('fonts/ZCOOLKuaiLe-Regular'),
+            this.loadSpriteFrame('textures/ui/achievement_star'),
+            this.loadSpriteFrame('textures/ui/result/result_bg'),
+            this.loadSpriteFrame('textures/ui/result/result_panel'),
+            this.loadSpriteFrame('textures/ui/result/result_score'),
+            this.loadSpriteFrame('textures/ui/result/result_coin'),
+            this.loadSpriteFrame('textures/ui/result/result_distance'),
+            this.loadSpriteFrame('textures/ui/result/result_best'),
+            this.loadSpriteFrame('textures/ui/menu_best_panel'),
+            this.loadSpriteFrame('textures/ui/hud_stats_panel'),
+            this.loadSpriteFrame('textures/ui/panels/shop_panel'),
+            this.loadSpriteFrame('textures/ui/panels/achievement_panel'),
+            this.loadSpriteFrame('textures/ui/panels/settings_panel'),
+            this.loadSpriteFrame('textures/ui/panels/pause_panel'),
+            this.loadSpriteFrame('textures/ui/panels/leaderboard_panel'),
+            this.loadSpriteFrame('textures/casual/cloud_normal'),
+            this.loadSpriteFrame('textures/casual/cloud_break'),
+            this.loadSpriteFrame('textures/casual/cloud_bounce'),
+            this.loadFont('fonts/DengXian-Bold'),
         ]);
         const [runnerRun, runnerJump, runnerSlide, runnerGlide] = await Promise.all([
             this.loadSpriteFrames('textures/runner/v2/run', 26),
@@ -1689,6 +2586,7 @@ export class GameManager extends Component {
             this.loadSpriteFrames('textures/runner/v2/slide', 18),
             this.loadSpriteFrames('textures/runner/v2/glide_land', 20),
         ]);
+        const achievementIcons = await this.loadSpriteFrames('textures/ui/achievements/achievement', 14);
         const classicSkin: RunnerSkinFrames = {
             preview: runnerRun[0],
             run: runnerRun,
@@ -1737,6 +2635,7 @@ export class GameManager extends Component {
             shield,
             scoreStar,
             dash,
+            reviveTicket,
             magnetFx,
             shieldFx,
             scoreFx,
@@ -1754,6 +2653,24 @@ export class GameManager extends Component {
             badge,
             logo,
             pauseIcon,
+            achievementStar,
+            achievementIcons,
+            resultBg,
+            resultPanel,
+            resultScore,
+            resultCoin,
+            resultDistance,
+            resultBest,
+            menuBestPanel,
+            hudStatsPanel,
+            shopPanel,
+            achievementPanel,
+            settingsPanel,
+            pausePanel,
+            leaderboardPanel,
+            cloudNormal,
+            cloudBreak,
+            cloudBounce,
             uiFont,
         };
     }

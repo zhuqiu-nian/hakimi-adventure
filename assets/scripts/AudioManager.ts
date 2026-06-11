@@ -17,6 +17,7 @@ export class AudioManager extends Component {
     public sfxVolume = 0.8;
 
     private _loadedClips: Map<string, AudioClip> = new Map();
+    private currentBgmPath = '';
 
     onLoad(): void {
         // Auto-wiring: AudioManager is scene-root child; GameRoot is under Canvas.
@@ -47,8 +48,12 @@ export class AudioManager extends Component {
 
     playBgm(path: string): void {
         if (!this.bgmSource) return;
+        if (this.currentBgmPath === path && this.bgmSource.playing) {
+            return;
+        }
         resources.load(path, AudioClip, (err, clip) => {
             if (err || !clip) return;
+            this.currentBgmPath = path;
             this.bgmSource!.clip = clip;
             this.bgmSource!.play();
         });

@@ -105,10 +105,16 @@ export class RunnerController extends Component {
 
     public jump(): boolean {
         if (this.isSliding || this.slideRecovering) {
-            return false;
+            this.isSliding = false;
+            this.slideRecovering = false;
+            this.slideHeld = false;
+            this.slideTimer = 0;
+            this.actionTimer = 0;
+            this.node.setScale(this.baseScale);
         }
 
         if (this.jumpCount === 0) {
+            this.isGliding = false;
             this.velocityY = this.jumpVelocity;
             this.jumpCount = 1;
             this.actionTimer = 0;
@@ -119,6 +125,7 @@ export class RunnerController extends Component {
         }
 
         if (this.jumpCount === 1) {
+            this.isGliding = false;
             this.velocityY = this.doubleJumpVelocity;
             this.jumpCount = 2;
             this.actionTimer = 0;
@@ -145,6 +152,10 @@ export class RunnerController extends Component {
 
     public stopGlide(): void {
         this.isGliding = false;
+    }
+
+    public canDoubleJump(): boolean {
+        return this.jumpCount === 1;
     }
 
     public playSpecial(frame: SpriteFrame | null | undefined, duration = 0.36): void {
@@ -321,6 +332,9 @@ export class RunnerController extends Component {
         const enterCount = Math.min(6, this.slideFrames.length);
         if (elapsed < enterCount * this.actionFrameDuration) {
             return this.pickFrameByTime(this.slideFrames.slice(0, enterCount), elapsed);
+        }
+        if (this.slideHeld) {
+            return this.slideFrames[enterCount - 1] ?? this.slideFrames[this.slideFrames.length - 1];
         }
         const loopFrames = this.slideFrames.slice(Math.max(0, enterCount - 2));
         const loopIndex = Math.floor((elapsed - enterCount * this.actionFrameDuration) / this.actionFrameDuration) % loopFrames.length;
