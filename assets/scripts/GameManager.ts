@@ -298,6 +298,8 @@ export class GameManager extends Component {
     private shieldBlocks = 0;
     private missileBlocks = 0;
     private reviveUsed = false;
+    private reviveAdTimer = 0;
+    private missionToastShown: Partial<Record<MissionId, boolean>> = {};
     private nextSpawnX = 720;
     private missileCooldown = 0;
     private spaceHeld = false;
@@ -332,6 +334,7 @@ export class GameManager extends Component {
     private readonly missileBaseCooldown = 7.4;
     private readonly glideDecisionDelay = 0.11;
     private readonly jumpIntentDelay = 0.11;
+    private readonly reviveAdDuration = 3;
     private readonly casualGravity = -1450;
     private readonly casualJumpVelocity = 850;
     private readonly casualMoveSpeed = 380;
@@ -385,6 +388,10 @@ export class GameManager extends Component {
         this.runner.tick(dt, running);
         if (casualRunning) {
             this.updateCasualMode(dt);
+            return;
+        }
+        if (this.state === 'revive') {
+            this.updateReviveAd(dt);
             return;
         }
         if (!running) {
@@ -647,6 +654,8 @@ export class GameManager extends Component {
         this.shieldBlocks = 0;
         this.missileBlocks = 0;
         this.reviveUsed = false;
+        this.reviveAdTimer = 0;
+        this.missionToastShown = {};
         this.nextSpawnX = 700;
         this.missileCooldown = 3.8;
         this.spaceHeld = false;
@@ -656,6 +665,7 @@ export class GameManager extends Component {
         this.jumpIntentTimer = -1;
         this.touchJumpIntentTimer = -1;
         this.powers = { magnet: 0, shield: 0, score: 0, dash: 0 };
+        this.hud?.setReviveAdProgress(false);
         this.updatePowerEffects(0);
         this.obstacles.length = 0;
         this.collectibles.length = 0;
@@ -781,6 +791,7 @@ export class GameManager extends Component {
         this.saveData.totalDistance += Math.floor(this.distance);
         this.updateBestScores(finalScore);
         this.saveData.missionsCompleted += missions.filter((mission) => mission.completed).length;
+        const newAchievements = this.unlockedAchievements(finalScore, this.saveData.totalCoins);
         this.checkAchievementsNow(this.saveData.totalCoins, true);
         const rank = this.recordLeaderboard(finalScore);
         this.saveGame();
@@ -793,7 +804,7 @@ export class GameManager extends Component {
             reward,
             rank,
             missions,
-            achievements: [],
+            achievements: newAchievements,
             leaderboard: this.leaderboardView(10, this.latestLeaderboardEntry),
         });
         this.feedback?.shake(this.worldRoot, 12);
@@ -1578,6 +1589,7 @@ export class GameManager extends Component {
         }
         this.reviveUsed = true;
         this.state = 'revive';
+        this.reviveAdTimer = 0;
         this.hud?.setRevive();
         this.feedback?.shake(this.worldRoot, 8);
         this.feedback?.showText(this.t('\u8981\u590d\u6d3b\u5417\uff1f', 'Revive?'), new Vec3(0, 24, 0), new Color(255, 152, 84, 255), 30);
@@ -1598,6 +1610,8 @@ export class GameManager extends Component {
         if (this.state !== 'revive') {
             return;
         }
+        this.reviveAdTimer = 0;
+        this.hud?.setReviveAdProgress(false);
         this.clearDangerAroundPlayer();
         this.powers.shield = Math.max(this.powers.shield, 3.5);
         this.comboTimer = 1.4;
@@ -1607,6 +1621,27 @@ export class GameManager extends Component {
         this.updatePowerEffects(0);
         this.feedback?.showText(this.t('\u590d\u6d3b\u6210\u529f\uff01', 'Revived!'), new Vec3(this.playerX + 70, this.playerGroundY + 120, 0), new Color(74, 145, 226, 255), 28);
         this.audioManager?.playSfx('powerup');
+    }
+
+    private startReviveAdCountdown(): void {
+        if (this.state !== 'revive' || this.reviveAdTimer > 0) {
+            return;
+        }
+        this.reviveAdTimer = this.reviveAdDuration;
+        this.hud?.setReviveAdProgress(true, this.reviveAdTimer);
+        this.feedback?.showText(this.t('\u5e7f\u544a\u64ad\u653e\u4e2d...', 'Ad playing...'), new Vec3(0, 24, 0), new Color(255, 152, 84, 255), 28);
+        this.audioManager?.playSfx('coin');
+    }
+
+    private updateReviveAd(dt: number): void {
+        if (this.reviveAdTimer <= 0) {
+            return;
+        }
+        this.reviveAdTimer = Math.max(0, this.reviveAdTimer - dt);
+        this.hud?.setReviveAdProgress(true, this.reviveAdTimer);
+        if (this.reviveAdTimer <= 0) {
+            this.reviveFromAd();
+        }
     }
 
     private clearDangerAroundPlayer(): void {
@@ -1726,6 +1761,20 @@ export class GameManager extends Component {
             missionText: this.missionText(),
         });
         this.hud?.updatePowers(this.powers, this.powerMaxState());
+        this.checkMissionToasts();
+    }
+
+    private checkMissionToasts(): void {
+        if (this.state !== 'playing') {
+            return;
+        }
+        for (const mission of MISSION_DEFS) {
+            if (this.missionToastShown[mission.id] || this.missionCurrent(mission.id) < mission.target) {
+                continue;
+            }
+            this.missionToastShown[mission.id] = true;
+            this.hud?.showMissionToast(this.missionLabel(mission.id), mission.reward);
+        }
     }
 
     private pickCoursePattern(): CoursePattern {
@@ -1885,8 +1934,12 @@ export class GameManager extends Component {
         this.hud?.setLeaderboard(this.leaderboardView(10, currentEntry));
     }
     private onLeaderboardBackPressed(): void { this.hud?.closeLeaderboard(); }
-    private onReviveAdPressed(): void { this.reviveFromAd(); }
-    private onReviveGiveUpPressed(): void { this.gameOver(); }
+    private onReviveAdPressed(): void { this.startReviveAdCountdown(); }
+    private onReviveGiveUpPressed(): void {
+        this.reviveAdTimer = 0;
+        this.hud?.setReviveAdProgress(false);
+        this.gameOver();
+    }
     private onPausePressed(): void { this.pauseRun(); }
     private onContinuePressed(): void { this.resumeRun(); }
     private onMenuPressed(): void { this.showMenu(); }

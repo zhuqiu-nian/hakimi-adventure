@@ -96,6 +96,12 @@ type AchievementRowView = {
     reward: Label;
 };
 
+type PowerTimerRow = {
+    root: Node;
+    fill: Graphics;
+    label: Label;
+};
+
 export type HudSaveView = {
     totalCoins: number;
     totalStars: number;
@@ -300,6 +306,10 @@ export class GameHud extends Component {
     private multiplierLabel: Label | null = null;
     private comboLabel: Label | null = null;
     private missionLabel: Label | null = null;
+    private missionToastNode: Node | null = null;
+    private missionToastLabel: Label | null = null;
+    private reviveTextLabel: Label | null = null;
+    private reviveAdLabel: Label | null = null;
     private achievementNoticeNode: Node | null = null;
     private achievementNoticeLabel: Label | null = null;
     private achievementNoticeIcon: Sprite | null = null;
@@ -330,6 +340,7 @@ export class GameHud extends Component {
     private skinCardBgs: Record<string, Graphics> = {};
     private skinLabels: Record<string, Label> = {};
     private skinPreviewSprites: Record<string, Sprite> = {};
+    private powerTimerRows: Partial<Record<keyof PowerState, PowerTimerRow>> = {};
     private uiFont: Font | null = null;
     private language: Language = 'zh';
     private settingsLanguageNode: Node | null = null;
@@ -340,6 +351,7 @@ export class GameHud extends Component {
     private settingsAssistNode: Node | null = null;
     private settingsResetSaveNode: Node | null = null;
     private settingsResetRankNode: Node | null = null;
+    private readonly powerKinds: Array<keyof PowerState> = ['magnet', 'shield', 'score', 'dash'];
 
     public build(buttonFrame: SpriteFrame | null, panelFrame: SpriteFrame | null, logoFrame: SpriteFrame | null, icons: HudIconFrames, uiFont: Font | null = null): void {
         this.uiFont = uiFont;
@@ -358,6 +370,7 @@ export class GameHud extends Component {
         this.buildLeaderboard(buttonFrame, icons);
         this.buildAchievements(buttonFrame, icons, icons.achievementIcons, icons.achievementStar);
         this.buildAchievementNotice(icons.achievementStar);
+        this.buildMissionToast();
         this.setMenu({ totalCoins: 0, totalStars: 0, bestScore: 0, bestScoreToday: 0, selectedSkin: 'classic', upgrades: { magnet: 1, shield: 1, score: 1, dash: 1 }, inventory: { startDash: 0, reviveTicket: 0, startShield: 0 } }, []);
     }
 
@@ -400,6 +413,7 @@ export class GameHud extends Component {
 
     public setRevive(): void {
         this.showOnly('revive');
+        this.setReviveAdProgress(false);
     }
 
     public setGameOver(result: GameOverView): void {
@@ -413,10 +427,26 @@ export class GameHud extends Component {
         if (this.resultCoinLabel) this.resultCoinLabel.string = String(result.runCoins);
         if (this.resultDistanceLabel) this.resultDistanceLabel.string = `${Math.floor(result.distance)}m`;
         if (this.resultRewardLabel) this.resultRewardLabel.string = String(result.bestScore);
-        if (this.resultMissionLabel) this.resultMissionLabel.string = '';
+        if (this.resultMissionLabel) {
+            const completedMissions = result.missions.filter((mission) => mission.completed);
+            if (completedMissions.length > 0) {
+                const missionSummary = completedMissions.map((mission) => `${mission.label}+${mission.reward}`).join('  ');
+                this.resultMissionLabel.string = `${this.pick('\u4efb\u52a1\u5956\u52b1', 'Mission Rewards')}  ${missionSummary}`;
+                this.setNodeVisible(this.resultMissionLabel.node, true);
+            } else {
+                this.resultMissionLabel.string = '';
+                this.setNodeVisible(this.resultMissionLabel.node, false);
+            }
+        }
         if (this.resultAchievementLabel) {
-            this.resultAchievementLabel.string = '';
-            this.setNodeVisible(this.resultAchievementLabel.node, false);
+            if (result.achievements.length > 0) {
+                const achievementSummary = result.achievements.map((achievement) => `${achievement.label}+${achievement.reward}`).join('  ');
+                this.resultAchievementLabel.string = `${this.pick('\u65b0\u6210\u5c31', 'New Achievements')}  ${achievementSummary}`;
+                this.setNodeVisible(this.resultAchievementLabel.node, true);
+            } else {
+                this.resultAchievementLabel.string = '';
+                this.setNodeVisible(this.resultAchievementLabel.node, false);
+            }
         }
         if (this.totalCoinLabel) this.totalCoinLabel.string = String(result.totalCoins);
     }
@@ -514,6 +544,27 @@ export class GameHud extends Component {
             .start();
     }
 
+    public showMissionToast(label: string, reward: number): void {
+        if (!this.missionToastNode || !this.missionToastLabel) {
+            return;
+        }
+        this.missionToastLabel.string = `${this.pick('\u4efb\u52a1\u5b8c\u6210', 'Mission Done')}: ${label}  +${reward}`;
+        Tween.stopAllByTarget(this.missionToastNode);
+        this.missionToastNode.active = true;
+        this.missionToastNode.setScale(0.92, 0.92, 1);
+        this.missionToastNode.setPosition(0, 188, 0);
+        tween(this.missionToastNode)
+            .to(0.16, { scale: new Vec3(1, 1, 1), position: new Vec3(0, 204, 0) })
+            .delay(1.35)
+            .to(0.18, { scale: new Vec3(0.92, 0.92, 1), position: new Vec3(0, 226, 0) })
+            .call(() => {
+                if (this.missionToastNode) {
+                    this.missionToastNode.active = false;
+                }
+            })
+            .start();
+    }
+
     public updateSettings(settings: SettingsView): void {
         this.setLanguage(settings.language);
         const text = this.settingsTexts();
@@ -523,7 +574,41 @@ export class GameHud extends Component {
         if (this.settingsAssistValueLabel) this.settingsAssistValueLabel.string = settings.assistHints ? text.on : text.off;
     }
 
-    public updatePowers(_powers: PowerState, _maxPowers: PowerState): void {
+    public setReviveAdProgress(active: boolean, secondsLeft = 0): void {
+        if (active) {
+            const seconds = Math.max(1, Math.ceil(secondsLeft));
+            if (this.reviveTextLabel) {
+                this.reviveTextLabel.string = this.pick('\u6a21\u62df\u5e7f\u544a\u64ad\u653e\u4e2d\uff0c\u7ed3\u675f\u540e\u81ea\u52a8\u590d\u6d3b', 'Simulated ad is playing. Revive follows automatically.');
+            }
+            if (this.reviveAdLabel) {
+                this.reviveAdLabel.string = `${this.pick('\u5e7f\u544a\u4e2d', 'Ad')} ${seconds}s`;
+            }
+            return;
+        }
+        if (this.reviveTextLabel) {
+            this.reviveTextLabel.string = this.texts().reviveText;
+        }
+        if (this.reviveAdLabel) {
+            this.reviveAdLabel.string = this.texts().revive;
+        }
+    }
+
+    public updatePowers(powers: PowerState, maxPowers: PowerState): void {
+        for (const kind of this.powerKinds) {
+            const row = this.powerTimerRows[kind];
+            if (!row) {
+                continue;
+            }
+            const remaining = Math.max(0, powers[kind]);
+            const max = Math.max(0.1, maxPowers[kind]);
+            const active = remaining > 0.05;
+            this.setNodeVisible(row.root, active);
+            if (!active) {
+                continue;
+            }
+            row.label.string = `${POWER_NAMES_I18N[this.language][kind]} ${remaining.toFixed(1)}s`;
+            this.drawPowerTimer(row, Math.max(0, Math.min(1, remaining / max)), kind);
+        }
     }
 
     public getStartNode(): Node | null { return this.startNode; }
@@ -601,6 +686,38 @@ export class GameHud extends Component {
         this.distanceLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         this.pauseNode = this.makeImage('PauseButton', icons.pause, new Vec3(596, 320, 0), 34, 34, this.gameHudRoot);
         this.comboLabel = this.makeLabel('ComboLabel', '', 23, new Vec3(0, 226, 0), new Color(255, 152, 84, 255), 260, this.gameHudRoot);
+        this.buildPowerTimers(icons);
+    }
+
+    private buildPowerTimers(icons: HudIconFrames): void {
+        if (!this.gameHudRoot) return;
+        const frames: Record<keyof PowerState, SpriteFrame> = {
+            magnet: icons.magnet,
+            shield: icons.shield,
+            score: icons.scoreStar,
+            dash: icons.dash,
+        };
+        for (let i = 0; i < this.powerKinds.length; i++) {
+            const kind = this.powerKinds[i];
+            const root = this.makeNode(`PowerTimer_${kind}`, this.gameHudRoot, new Vec3(460, 248 - i * 39, 0));
+            root.addComponent(UITransform).setContentSize(250, 32);
+            const bg = root.addComponent(Graphics);
+            bg.fillColor = new Color(255, 248, 220, 210);
+            bg.strokeColor = new Color(183, 118, 57, 180);
+            bg.lineWidth = 2;
+            bg.roundRect(-125, -16, 250, 32, 16);
+            bg.fill();
+            bg.stroke();
+            const fillNode = this.makeNode(`PowerTimerFill_${kind}`, root, Vec3.ZERO);
+            const fill = fillNode.addComponent(Graphics);
+            this.makeImage(`PowerTimerIcon_${kind}`, frames[kind], new Vec3(-102, 0, 0), 28, 28, root);
+            const label = this.makeLabel(`PowerTimerLabel_${kind}`, '', 17, new Vec3(24, 0, 0), new Color(93, 63, 45, 255), 174, root);
+            label.horizontalAlign = Label.HorizontalAlign.LEFT;
+            label.enableWrapText = false;
+            label.isBold = true;
+            this.powerTimerRows[kind] = { root, fill, label };
+            root.active = false;
+        }
     }
 
     private buildAchievementNotice(starFrame: SpriteFrame): void {
@@ -624,6 +741,22 @@ export class GameHud extends Component {
         const noticeTextTransform = this.achievementNoticeLabel.node.getComponent(UITransform);
         noticeTextTransform?.setContentSize(590, 88);
         this.achievementNoticeNode = node;
+        node.active = false;
+    }
+
+    private buildMissionToast(): void {
+        const node = this.makeNode('MissionToast', this.node, new Vec3(0, 204, 0));
+        node.addComponent(UITransform).setContentSize(540, 58);
+        const bg = node.addComponent(Graphics);
+        bg.fillColor = new Color(255, 246, 202, 230);
+        bg.strokeColor = new Color(216, 132, 40, 230);
+        bg.lineWidth = 3;
+        bg.roundRect(-270, -29, 540, 58, 20);
+        bg.fill();
+        bg.stroke();
+        this.missionToastLabel = this.makeLabel('MissionToastText', '', 24, Vec3.ZERO, new Color(130, 78, 35, 255), 500, node);
+        this.missionToastLabel.isBold = true;
+        this.missionToastNode = node;
         node.active = false;
     }
 
@@ -686,8 +819,10 @@ export class GameHud extends Component {
         this.revivePanel = this.makePanel('RevivePanel', panelFrame, new Vec3(0, 38, 0), 680, 300, this.overlayRoot);
         const reviveTitle = this.makeLabel('ReviveTitle', TXT.reviveTitle, 34, new Vec3(0, 92, 0), new Color(92, 65, 62, 255), 640, this.revivePanel);
         reviveTitle.enableWrapText = false;
-        this.makeLabel('ReviveText', TXT.reviveText, 22, new Vec3(0, 30, 0), new Color(88, 95, 101, 255), 560, this.revivePanel);
-        this.reviveAdNode = this.makeButton('ReviveAdButton', buttonFrame, new Vec3(-150, -82, 0), TXT.revive, this.revivePanel, 270, 58, 20).node;
+        this.reviveTextLabel = this.makeLabel('ReviveText', TXT.reviveText, 22, new Vec3(0, 30, 0), new Color(88, 95, 101, 255), 560, this.revivePanel);
+        const reviveAdButton = this.makeButton('ReviveAdButton', buttonFrame, new Vec3(-150, -82, 0), TXT.revive, this.revivePanel, 270, 58, 20);
+        this.reviveAdNode = reviveAdButton.node;
+        this.reviveAdLabel = reviveAdButton.label;
         this.reviveGiveUpNode = this.makeButton('ReviveGiveUpButton', buttonFrame, new Vec3(170, -82, 0), TXT.giveUp, this.revivePanel, 190, 58, 22).node;
     }
 
@@ -784,8 +919,12 @@ export class GameHud extends Component {
         this.resultDistanceLabel = this.makeResultValueLabel('ResultDistance', new Vec3(150, -46, 0), valueColor);
         this.resultRewardLabel = this.makeResultValueLabel('ResultBest', new Vec3(150, -146, 0), valueColor);
         this.resultTitleLabel = this.makeLabel('ResultTitle', '', 1, new Vec3(0, 0, 0), valueColor, 1, this.resultPanel);
-        this.resultMissionLabel = this.makeLabel('ResultMission', '', 1, new Vec3(0, 0, 0), valueColor, 1, this.resultPanel);
-        this.resultAchievementLabel = this.makeLabel('ResultAchievement', '', 1, new Vec3(0, 0, 0), valueColor, 1, this.resultPanel);
+        this.resultMissionLabel = this.makeLabel('ResultMission', '', 18, new Vec3(0, -214, 0), new Color(158, 95, 44, 255), 560, this.resultPanel);
+        this.resultAchievementLabel = this.makeLabel('ResultAchievement', '', 18, new Vec3(0, -246, 0), new Color(74, 112, 143, 255), 560, this.resultPanel);
+        this.resultMissionLabel.enableWrapText = false;
+        this.resultAchievementLabel.enableWrapText = false;
+        this.resultMissionLabel.overflow = Label.Overflow.SHRINK;
+        this.resultAchievementLabel.overflow = Label.Overflow.SHRINK;
         this.setNodeVisible(this.resultTitleLabel.node, false);
         this.setNodeVisible(this.resultMissionLabel.node, false);
         this.setNodeVisible(this.resultAchievementLabel.node, false);
@@ -1110,6 +1249,21 @@ export class GameHud extends Component {
             }
         }
         return null;
+    }
+
+    private drawPowerTimer(row: PowerTimerRow, ratio: number, kind: keyof PowerState): void {
+        row.fill.clear();
+        const width = 196 * ratio;
+        row.fill.fillColor = this.powerTimerColor(kind);
+        row.fill.roundRect(-86, -9, width, 18, 9);
+        row.fill.fill();
+    }
+
+    private powerTimerColor(kind: keyof PowerState): Color {
+        if (kind === 'magnet') return new Color(100, 188, 238, 148);
+        if (kind === 'shield') return new Color(94, 146, 238, 148);
+        if (kind === 'score') return new Color(255, 198, 72, 154);
+        return new Color(174, 118, 238, 148);
     }
 
     private makeSectionTitle(name: string, text: string, pos: Vec3, parent: Node): Label {
