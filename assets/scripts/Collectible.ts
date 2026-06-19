@@ -2,7 +2,7 @@ import { _decorator, Component, Rect, UITransform } from 'cc';
 
 const { ccclass, property } = _decorator;
 
-export type CollectibleKind = 'coin' | 'magnet' | 'shield' | 'score' | 'dash';
+export type CollectibleKind = 'coin' | 'magnet' | 'shield' | 'score' | 'dash' | 'fishDart' | 'mysteryBox';
 
 @ccclass('Collectible')
 export class Collectible extends Component {
@@ -11,6 +11,10 @@ export class Collectible extends Component {
 
     @property
     public kind: CollectibleKind = 'coin';
+
+    public coinTone = '';
+
+    public isFlyingCoin = false;
 
     private taken = false;
 

@@ -120,7 +120,6 @@ export class RunnerController extends Component {
             this.actionTimer = 0;
             this.isAirborne = true;
             this.setFrame(this.jumpFrames[0]);
-            this.audioManager?.playSfx('jump');
             return true;
         }
 
@@ -131,7 +130,6 @@ export class RunnerController extends Component {
             this.actionTimer = 0;
             this.isAirborne = true;
             this.setFrame(this.jumpFrames[1] ?? this.jumpFrames[0]);
-            this.audioManager?.playSfx('jump');
             return true;
         }
 
@@ -156,6 +154,59 @@ export class RunnerController extends Component {
 
     public canDoubleJump(): boolean {
         return this.jumpCount === 1;
+    }
+
+    public bounce(velocity = this.jumpVelocity * 0.78): void {
+        this.isSliding = false;
+        this.slideRecovering = false;
+        this.slideHeld = false;
+        this.slideTimer = 0;
+        this.isGliding = false;
+        this.velocityY = velocity;
+        this.jumpCount = Math.max(1, this.jumpCount);
+        this.actionTimer = 0;
+        this.isAirborne = true;
+        this.node.setScale(this.baseScale);
+        this.setFrame(this.jumpFrames[0]);
+    }
+
+    public beginInvincibleDash(): void {
+        this.isSliding = false;
+        this.slideRecovering = false;
+        this.slideHeld = false;
+        this.slideTimer = 0;
+        this.isGliding = false;
+        this.isAirborne = true;
+        this.jumpCount = 2;
+        this.velocityY = 0;
+        this.actionTimer = 0;
+        this.node.setScale(this.baseScale);
+        this.setFrame(this.runFrames[this.frameIndex] ?? this.runFrames[0]);
+    }
+
+    public holdInvincibleDashY(y: number): void {
+        const pos = this.node.position.clone();
+        pos.y = y;
+        this.node.setPosition(pos);
+        this.velocityY = 0;
+        this.isAirborne = true;
+        this.isGliding = false;
+        this.isSliding = false;
+        this.slideRecovering = false;
+        this.jumpCount = 2;
+    }
+
+    public endInvincibleDash(): void {
+        if (this.node.position.y <= this.groundY + 2) {
+            this.velocityY = 0;
+            this.jumpCount = 0;
+            this.isAirborne = false;
+            return;
+        }
+        this.velocityY = -180;
+        this.jumpCount = Math.max(1, this.jumpCount);
+        this.isAirborne = true;
+        this.isGliding = false;
     }
 
     public playSpecial(frame: SpriteFrame | null | undefined, duration = 0.36): void {

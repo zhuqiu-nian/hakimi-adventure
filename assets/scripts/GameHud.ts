@@ -140,6 +140,7 @@ export type HudIconFrames = {
     badge: SpriteFrame;
     pause: SpriteFrame;
     reviveTicket: SpriteFrame;
+    activeItemBase: SpriteFrame;
     achievementStar: SpriteFrame;
     achievementIcons: SpriteFrame[];
     resultBg: SpriteFrame;
@@ -341,6 +342,8 @@ export class GameHud extends Component {
     private skinLabels: Record<string, Label> = {};
     private skinPreviewSprites: Record<string, Sprite> = {};
     private powerTimerRows: Partial<Record<keyof PowerState, PowerTimerRow>> = {};
+    private activeItemNode: Node | null = null;
+    private activeItemIcon: Sprite | null = null;
     private uiFont: Font | null = null;
     private language: Language = 'zh';
     private settingsLanguageNode: Node | null = null;
@@ -405,6 +408,13 @@ export class GameHud extends Component {
 
     public setPlaying(): void {
         this.showOnly('game');
+    }
+
+    public setActiveItem(frame: SpriteFrame | null): void {
+        this.setNodeVisible(this.activeItemNode, !!frame);
+        if (this.activeItemIcon && frame) {
+            this.activeItemIcon.spriteFrame = frame;
+        }
     }
 
     public setPause(): void {
@@ -642,6 +652,7 @@ export class GameHud extends Component {
     public getConsumableButton(kind: ConsumableKind): Node | null { return this.consumableButtons[kind] ?? null; }
     public getShopTabNode(tab: ShopTab): Node | null { return this.shopTabNodes[tab] ?? null; }
     public getSkinButton(id: string): Node | null { return this.skinButtons[id] ?? null; }
+    public getActiveItemNode(): Node | null { return this.activeItemNode; }
 
     private buildCurrency(_panelFrame: SpriteFrame | null, icons: HudIconFrames): void {
         if (!this.currencyRoot) return;
@@ -686,7 +697,19 @@ export class GameHud extends Component {
         this.distanceLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
         this.pauseNode = this.makeImage('PauseButton', icons.pause, new Vec3(596, 320, 0), 34, 34, this.gameHudRoot);
         this.comboLabel = this.makeLabel('ComboLabel', '', 23, new Vec3(0, 226, 0), new Color(255, 152, 84, 255), 260, this.gameHudRoot);
+        this.buildActiveItemButton(icons);
         this.buildPowerTimers(icons);
+    }
+
+    private buildActiveItemButton(icons: HudIconFrames): void {
+        if (!this.gameHudRoot) return;
+        const root = this.makeNode('ActiveItemButton', this.gameHudRoot, new Vec3(566, 108, 0));
+        root.addComponent(UITransform).setContentSize(92, 92);
+        this.makeImage('ActiveItemButtonBase', icons.activeItemBase, Vec3.ZERO, 92, 92, root);
+        const iconNode = this.makeImage('ActiveItemButtonIcon', icons.magnet, new Vec3(0, 2, 0), 58, 58, root);
+        this.activeItemIcon = iconNode.getComponent(Sprite);
+        root.active = false;
+        this.activeItemNode = root;
     }
 
     private buildPowerTimers(icons: HudIconFrames): void {
@@ -855,7 +878,8 @@ export class GameHud extends Component {
         ];
         for (const item of consumables) {
             const button = this.makeButton(`Consumable_${item.id}`, buttonFrame, item.pos, '', this.shopContentRoots.buy, 500, 58, 18);
-            this.makeImage(`ConsumableIcon_${item.id}`, item.frame, new Vec3(-218, 0, 0), 36, 36, button.node);
+            const iconAspect = item.id === 'reviveTicket' ? 1091 / 672 : undefined;
+            this.makeFittedImage(`ConsumableIcon_${item.id}`, item.frame, new Vec3(-218, 0, 0), item.id === 'reviveTicket' ? 54 : 36, 36, button.node, iconAspect);
             button.label.node.setPosition(new Vec3(32, 0, 0));
             button.label.lineHeight = 22;
             button.label.getComponent(UITransform)?.setContentSize(400, 52);
@@ -872,7 +896,7 @@ export class GameHud extends Component {
         ];
         for (const row of rows) {
             const button = this.makeButton(`Upgrade_${row.kind}`, buttonFrame, row.pos, '', this.shopContentRoots.upgrade, 360, 58, 19);
-            this.makeImage(`UpgradeIcon_${row.kind}`, row.frame, new Vec3(-146, 0, 0), 30, 30, button.node);
+            this.makeFittedImage(`UpgradeIcon_${row.kind}`, row.frame, new Vec3(-146, 0, 0), 30, 30, button.node);
             button.label.node.setPosition(new Vec3(30, 0, 0));
             button.label.getComponent(UITransform)?.setContentSize(250, 44);
             this.upgradeButtons[row.kind] = button.node;
@@ -979,13 +1003,14 @@ export class GameHud extends Component {
         scroll.inertia = true;
         const content = this.makeNode('AchievementsContent', viewport, new Vec3(0, 0, 0));
         const rowGap = 92;
-        const contentHeight = 14 * rowGap + 18;
+        const rowCount = Math.max(14, iconFrames.length);
+        const contentHeight = rowCount * rowGap + 18;
         content.addComponent(UITransform).setContentSize(790, contentHeight);
         content.setPosition(0, contentHeight * 0.5 - 170, 0);
         scroll.content = content;
         this.achievementContent = content;
         this.achievementRows = [];
-        for (let i = 0; i < 14; i++) {
+        for (let i = 0; i < rowCount; i++) {
             const y = contentHeight * 0.5 - 44 - i * rowGap;
             const rowRoot = this.makeNode(`AchievementCard_${i}`, content, new Vec3(0, y, 0));
             rowRoot.addComponent(UITransform).setContentSize(730, 78);
@@ -1349,6 +1374,51 @@ export class GameHud extends Component {
         if (frame) sprite.spriteFrame = frame;
         transform.setContentSize(width, height);
         return node;
+    }
+
+    private makeFittedImage(name: string, frame: SpriteFrame | null, pos: Vec3, maxWidth: number, maxHeight: number, parent = this.node, aspectRatio?: number): Node {
+        const node = new Node(name);
+        parent.addChild(node);
+        node.setPosition(pos);
+        const transform = node.addComponent(UITransform);
+        const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        if (!frame) {
+            transform.setContentSize(maxWidth, maxHeight);
+            return node;
+        }
+
+        sprite.spriteFrame = frame;
+        const size = aspectRatio && aspectRatio > 0
+            ? this.sizeForAspectRatio(maxWidth, maxHeight, aspectRatio)
+            : this.spriteFrameSize(frame);
+        const scale = Math.min(maxWidth / size.width, maxHeight / size.height);
+        transform.setContentSize(size.width * scale, size.height * scale);
+        return node;
+    }
+
+    private sizeForAspectRatio(maxWidth: number, maxHeight: number, aspectRatio: number): { width: number; height: number } {
+        if (maxWidth / maxHeight > aspectRatio) {
+            return { width: maxHeight * aspectRatio, height: maxHeight };
+        }
+        return { width: maxWidth, height: maxWidth / aspectRatio };
+    }
+
+    private spriteFrameSize(frame: SpriteFrame): { width: number; height: number } {
+        const anyFrame = frame as unknown as {
+            originalSize?: { width: number; height: number };
+            rect?: { width: number; height: number };
+            width?: number;
+            height?: number;
+            getOriginalSize?: () => { width: number; height: number };
+        };
+        const size = anyFrame.originalSize ?? anyFrame.getOriginalSize?.() ?? anyFrame.rect;
+        const width = Number(size?.width ?? anyFrame.width ?? 1);
+        const height = Number(size?.height ?? anyFrame.height ?? 1);
+        return {
+            width: Math.max(1, width),
+            height: Math.max(1, height),
+        };
     }
 
     private makeLabel(name: string, text: string, fontSize: number, pos: Vec3, color: Color, width: number, parent = this.node): Label {

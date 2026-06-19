@@ -14,6 +14,8 @@ export class Obstacle extends Component {
 
     public passType: ObstaclePassType = 'jump';
 
+    public obstacleKind = '';
+
     public passed = false;
 
     public getHitBox(): Rect {

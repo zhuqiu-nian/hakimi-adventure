@@ -10,24 +10,34 @@ export class ParallaxLayer extends Component {
     @property
     public wrapWidth = 1280;
 
+    @property
+    public overlap = 1;
+
     public tick(dt: number, speed: number): void {
         const dx = speed * this.ratio * dt;
-        const visibleLeft = -this.wrapWidth * 0.5;
+        if (this.node.children.length === 0 || dx === 0) {
+            return;
+        }
+
         for (const child of this.node.children) {
             const pos = child.position.clone();
             pos.x -= dx;
             child.setPosition(pos);
         }
-        const ordered = [...this.node.children].sort((a, b) => a.position.x - b.position.x);
-        for (const child of ordered) {
-            const width = this.widthOf(child);
-            if (child.position.x + width * 0.5 > visibleLeft) {
-                continue;
+
+        const visibleLeft = -this.wrapWidth * 0.5;
+        let ordered = [...this.node.children].sort((a, b) => a.position.x - b.position.x);
+        while (ordered.length > 1) {
+            const leftmost = ordered[0];
+            const width = this.widthOf(leftmost);
+            if (leftmost.position.x + width * 0.5 > visibleLeft - this.overlap) {
+                break;
             }
-            const rightmost = [...this.node.children].sort((a, b) => b.position.x - a.position.x)[0];
-            const pos = child.position.clone();
-            pos.x = rightmost.position.x + (this.widthOf(rightmost) + width) * 0.5 - 0.5;
-            child.setPosition(pos);
+            const rightmost = ordered[ordered.length - 1];
+            const pos = leftmost.position.clone();
+            pos.x = rightmost.position.x + (this.widthOf(rightmost) + width) * 0.5 - this.overlap;
+            leftmost.setPosition(pos);
+            ordered = [...this.node.children].sort((a, b) => a.position.x - b.position.x);
         }
     }
 

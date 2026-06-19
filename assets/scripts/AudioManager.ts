@@ -18,8 +18,15 @@ export class AudioManager extends Component {
 
     private _loadedClips: Map<string, AudioClip> = new Map();
     private currentBgmPath = '';
+    private static activeInstance: AudioManager | null = null;
 
     onLoad(): void {
+        if (AudioManager.activeInstance && AudioManager.activeInstance !== this && AudioManager.activeInstance.node?.isValid) {
+            this.enabled = false;
+            return;
+        }
+        AudioManager.activeInstance = this;
+
         // Auto-wiring: AudioManager is scene-root child; GameRoot is under Canvas.
         // Path: AudioManager → Scene → Canvas → GameRoot
         const scene = this.node.parent;
@@ -35,7 +42,10 @@ export class AudioManager extends Component {
         this.bgmSource = sources[0] ?? null;
         this.sfxSource = sources[1] ?? null;
 
-        console.log('[AudioManager] onLoad — sources:', sources.length, 'bgm:', !!this.bgmSource, 'sfx:', !!this.sfxSource);
+        for (const source of sources) {
+            source.stop();
+            source.playOnAwake = false;
+        }
 
         if (this.bgmSource) {
             this.bgmSource.volume = this.bgmVolume;
@@ -46,16 +56,26 @@ export class AudioManager extends Component {
         }
     }
 
+    onDestroy(): void {
+        if (AudioManager.activeInstance === this) {
+            AudioManager.activeInstance = null;
+        }
+    }
+
     playBgm(path: string): void {
         if (!this.bgmSource) return;
         if (this.currentBgmPath === path && this.bgmSource.playing) {
             return;
         }
+        this.bgmSource.stop();
         resources.load(path, AudioClip, (err, clip) => {
             if (err || !clip) return;
+            if (!this.bgmSource) return;
             this.currentBgmPath = path;
-            this.bgmSource!.clip = clip;
-            this.bgmSource!.play();
+            this.bgmSource.clip = clip;
+            this.bgmSource.loop = true;
+            this.bgmSource.volume = this.bgmVolume;
+            this.bgmSource.play();
         });
     }
 
@@ -72,9 +92,8 @@ export class AudioManager extends Component {
     }
 
     playSfx(key: string): void {
-        console.log('[AudioManager] playSfx called:', key, 'sfxSource:', !!this.sfxSource);
         if (!this.sfxSource) return;
-        if (key === 'dodge') return; // 无独立音效文件
+        if (key === 'dodge' || key === 'jump' || key === 'start' || key === 'gameover' || key === 'slide') return;
 
         const path = `audio/sfx/${key}`;
 
@@ -84,7 +103,6 @@ export class AudioManager extends Component {
         }
 
         resources.load(path, AudioClip, (err, clip) => {
-            console.log('[AudioManager] loaded:', key, 'clip:', !!clip, 'err:', err);
             if (err || !clip) return;
             this._loadedClips.set(key, clip);
             this.sfxSource!.playOneShot(clip);
